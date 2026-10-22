@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/v1/events", route => route.fulfill({ status: 202, json: { accepted: true } }));
+});
+
 test("landing presents the HeardIt experiment and create CTA", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Same Words.*Four Meanings/ })).toBeVisible();
@@ -100,7 +104,7 @@ test("creator generates, reviews, and publishes a test through the staged journe
   if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-create-desktop.png", fullPage: true });
   if (page.viewportSize()?.width === 375) await page.screenshot({ path: "test-results/heardit-create-mobile.png", fullPage: true });
   await page.getByRole("button", { name: /Generate voice/ }).click();
-  await expect(page.getByRole("heading", { name: "Your voice is ready" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your voice is ready" })).toBeVisible({ timeout: 15_000 });
   if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-generate-desktop.png", fullPage: true });
   await expect(page.getByText("s2.1-pro-free").first()).toBeVisible();
   await page.getByRole("button", { name: /Continue to review/ }).click();

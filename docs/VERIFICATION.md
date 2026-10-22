@@ -102,3 +102,19 @@ Executed on 2026-10-23 (Asia/Calcutta). Added an opt-in API smoke flow that crea
 ## Remaining verification
 
 The guarded live smoke, genuine provider requests, live deployment, and execution of the GitHub Actions workflow have not run. Baseline live URLs above are configuration inputs, not a claim that this branch is deployed.
+
+## Verification follow-up — 2026-10-23
+
+| Command | Observed result |
+| --- | --- |
+| `git diff main..engineering-readiness --stat` | 74 files changed: API hardening/reliability and router/schema/type generation, related tests, creator/listener/results/landing updates, analytics/admin/demo support, documentation, and removal of unused UI components/dependencies. No unrelated user change was present in the working tree. |
+| `HEARDIT_MONGO_TEST_URI=mongodb://127.0.0.1:27017 npm run api:test` | **60 passed in 2.88s**, including forged/mismatched assignment-token rejection and creator-preview API behavior. |
+| `PLAYWRIGHT_PORT=3126 npm run test:e2e` | **32 passed, 1 failed in 1.4m**. The desktop creator generation heading exceeded the 5-second assertion timeout under parallel load; tablet and mobile passed. The failed case passed in isolation. |
+| `PLAYWRIGHT_PORT=3129 npm run test:e2e` after test stabilization | **33 passed in 1.2m** across desktop, tablet, and mobile. Creator preview rendered without assignment/vote; the creator journey passed at each size. API responses are mocked in E2E. |
+| `npm view braces version` | Registry returned **3.0.3**. |
+| `npm audit fix --dry-run` | Exit 1; still reports the same five high-severity dependency-chain findings. npm offers only a forced downgrade to `eslint-config-next@14.2.35`, which is a breaking major-version change. No dependency or lockfile change was applied. |
+| `npm audit --omit=dev` | Exit 0: **0 production dependency vulnerabilities**. |
+| `npm run typecheck` / `npm run lint` | Both exited 0 after the E2E test adjustment. |
+| [GitHub advisory GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) | Lists `braces <=3.0.3` as affected and no patched version. All five npm findings trace to this one advisory through `braces → micromatch → fast-glob → @next/eslint-plugin-next → eslint-config-next`. |
+
+The five development-dependency alerts cannot currently be fixed without adopting a breaking dependency downgrade or an unpublished patch. Recheck the advisory and registry before the next dependency update; this is not a claim that the dev-tool vulnerability is fixed.
