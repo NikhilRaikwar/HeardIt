@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="260" height="64" viewBox="0 0 260 64" role="img" aria-labelledby="title">
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="64" viewBox="0 0 192 64" role="img" aria-labelledby="title">
   <title id="title">HeardIt</title>
-  <rect x="1" y="1" width="258" height="62" rx="18" fill="#FCFBFE" stroke="#EAE6F1"/>
+  <rect x="1" y="1" width="190" height="62" rx="18" fill="#FCFBFE" stroke="#EAE6F1"/>
   <rect x="10" y="9" width="46" height="46" rx="14" fill="#704BEF"/>
   <g fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round">
     <path d="M22 27v10M29 22v20M36 29v6M43 20v24M50 26v12"/>
