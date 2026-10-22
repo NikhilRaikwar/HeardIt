@@ -1,26 +1,54 @@
 """HeardIt's public, privacy-preserving listening experiment API."""
-import base64, binascii, hashlib, hmac, ipaddress, json, secrets, uuid
+import asyncio
+import base64, binascii, hashlib, hmac, ipaddress, json, re, secrets, uuid
 from datetime import datetime, timezone
 from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, Header, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pymongo import ASCENDING
 from pymongo.errors import DuplicateKeyError
 from pymongo import ReturnDocument
-from pymongo.errors import PyMongoError
 from gridfs import AsyncGridFSBucket
 
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.db import require_database
-from app.services.fish_tts import is_audio
+from app.services.fish_tts import (
+    FishTTSService,
+    canonical_speech_text,
+    get_fish_service,
+    synthesis_cache_key,
+)
 
 router = APIRouter()
 settings = get_settings()
 now = lambda: datetime.now(timezone.utc).isoformat()
+_indexes_ready = False
+_indexes_lock = asyncio.Lock()
+
+
+def indexes_ready() -> bool:
+    return _indexes_ready
+
+
+async def ensure_indexes(db):
+    """Create the uniqueness/TTL guarantees before accepting the first write."""
+    global _indexes_ready
+    if _indexes_ready:
+        return
+    async with _indexes_lock:
+        if _indexes_ready:
+            return
+        await initialize_heardit(db)
+        _indexes_ready = True
+
+
+async def require_indexed_database(db=Depends(require_database)):
+    await ensure_indexes(db)
+    return db
 
 class SuggestRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -164,17 +192,14 @@ def _gridfs(db):
     return AsyncGridFSBucket(db, bucket_name='heardit_audio')
 
 def _cache_key(sentence, direction):
-    normalized_sentence = ' '.join(sentence.split())
-    normalized_direction = ' '.join(direction.split())
-    payload = {'model': settings.fish_tts_model, 'text': f'{normalized_direction} {normalized_sentence}', 'direction': normalized_direction, 'voice': 'fish-account-default-v1', 'format': 'mp3', 'output': {'sample_rate': 44100}}
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    return synthesis_cache_key(direction, sentence, settings.fish_tts_model, settings.fish_default_voice_id)
 
 @router.get('/health')
 async def health(db=Depends(require_database)):
-    return {'status': 'ok', 'database': 'mongodb', 'fish_configured': bool(settings.fish_api_key.get_secret_value())}
+    return {'status': 'ok', 'database': 'mongodb', 'fish_configured': bool(settings.fish_api_key.get_secret_value()), 'indexes_ready': indexes_ready()}
 
 @router.post('/api/v1/suggestions')
-async def suggestions(body: SuggestRequest, request: Request, db=Depends(require_database)):
+async def suggestions(body: SuggestRequest, request: Request, db=Depends(require_indexed_database)):
     if not settings.aiml_api_key.get_secret_value():
         raise AppError(503, 'aiml_not_configured', 'AI suggestions are unavailable right now. Add interpretations manually and continue.')
     await _rate_limit(db, 'suggest:' + _ip_hash(request), 30)
@@ -200,36 +225,62 @@ async def suggestions(body: SuggestRequest, request: Request, db=Depends(require
     raise AppError(502, 'aiml_invalid_output', 'AI could not suggest valid choices. Add interpretations manually and continue.') from error
 
 @router.post('/api/v1/audio/generate')
-async def generate(body: GenerateRequest, request: Request, db=Depends(require_database)):
-    key = settings.fish_api_key.get_secret_value()
-    if not key: raise AppError(503, 'fish_not_configured', 'Fish Audio is not configured on the API server.')
+async def generate(body: GenerateRequest, request: Request, db=Depends(require_indexed_database), fish: FishTTSService=Depends(get_fish_service)):
     await _rate_limit(db, 'generate:' + _ip_hash(request), 10)
     cache = _cache_key(body.sentence, body.direction)
     cached = await db.audio_assets.find_one({'cache_key': cache})
-    if cached: return {'audio_id': cached['id'], 'url': f"/api/v1/audio/{cached['id']}", 'cached': True, 'model': cached['model'], 'direction': cached['direction'], 'voice': cached['voice'], 'created_at': cached['created_at']}
-    full_text = f'{body.direction.strip()} {body.sentence.strip()}'
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            res = await client.post('https://api.fish.audio/v1/tts', headers={'Authorization': f'Bearer {key}', 'model': settings.fish_tts_model}, json={'text': full_text, 'format': 'mp3'})
-    except httpx.TimeoutException as e: raise AppError(503, 'fish_timeout', 'Fish Audio took too long. Try again.') from e
-    except httpx.NetworkError as e: raise AppError(503, 'fish_unavailable', 'Fish Audio could not be reached. Try again shortly.') from e
-    if res.status_code in (401, 403): raise AppError(502, 'fish_authentication_failed', 'Fish Audio rejected the configured key.')
-    if res.status_code == 402: raise AppError(503, 'fish_quota_unavailable', 'Fish Audio reports that account quota is unavailable.')
-    if res.status_code == 429: raise AppError(429, 'fish_rate_limited', 'Fish Audio is rate limiting requests. Try again shortly.')
-    if res.status_code >= 400: raise AppError(502, 'fish_unavailable', 'Fish Audio could not generate this clip.')
-    audio = res.content
-    # Vercel Functions cap the complete response payload at 4.5 MB. Keep a little
-    # headroom so serving a stored MP3 remains reliable on the intended platform.
-    if res.headers.get('content-type','').split(';')[0] not in ('audio/mpeg','audio/mp3','application/octet-stream') or not is_audio(audio) or len(audio) > 4_000_000:
-        raise AppError(502, 'fish_invalid_audio', 'Fish Audio returned an invalid MP3.')
+    if cached:
+        return _audio_payload(cached, cached=True)
+    full_text = canonical_speech_text(body.direction, body.sentence)
+    audio = await fish.generate(full_text, language='en', voice_id=settings.fish_default_voice_id)
     audio_id = str(uuid.uuid4())
     created_at = now()
+    bucket = _gridfs(db)
+    grid_id = None
     try:
-        grid_id = await _gridfs(db).upload_from_stream(audio_id, audio, metadata={'contentType':'audio/mpeg','cache_key':cache})
-        await db.audio_assets.insert_one({'id':audio_id,'gridfs_id':grid_id,'cache_key':cache,'content_type':'audio/mpeg','storage_reference':str(grid_id),'file_size':len(audio),'model':settings.fish_tts_model,'direction':body.direction,'voice':'fish-account-default-v1','input_text':full_text,'created_at':created_at})
+        grid_id = await bucket.upload_from_stream(audio_id, audio, metadata={'contentType':'audio/mpeg','cache_key':cache})
+        asset = {
+            'id':audio_id,
+            'gridfs_id':grid_id,
+            'cache_key':cache,
+            'content_type':'audio/mpeg',
+            'storage_reference':str(grid_id),
+            'file_size':len(audio),
+            'model':settings.fish_tts_model,
+            'direction':' '.join(body.direction.split()),
+            'voice':settings.fish_default_voice_id or 'fish-account-default-v1',
+            'input_text':full_text,
+            'created_at':created_at,
+        }
+        await db.audio_assets.insert_one(asset)
+    except DuplicateKeyError:
+        # Another request won the cache-key race after this request uploaded.
+        if grid_id is not None:
+            await bucket.delete(grid_id)
+        winner = await db.audio_assets.find_one({'cache_key':cache})
+        if winner:
+            return _audio_payload(winner, cached=True)
+        raise AppError(503, 'audio_storage_failed', 'The generated clip could not be saved. It is not ready to publish.')
     except Exception as exc:
+        if grid_id is not None:
+            try:
+                await bucket.delete(grid_id)
+            except Exception:
+                pass
         raise AppError(503, 'audio_storage_failed', 'The generated clip could not be saved. It is not ready to publish.') from exc
-    return {'audio_id':audio_id,'url':f'/api/v1/audio/{audio_id}','cached':False,'model':settings.fish_tts_model,'direction':body.direction,'voice':'fish-account-default-v1','created_at':created_at}
+    return _audio_payload(asset, cached=False)
+
+
+def _audio_payload(asset, cached: bool):
+    return {
+        'audio_id':asset['id'],
+        'url':f"/api/v1/audio/{asset['id']}",
+        'cached':cached,
+        'model':asset['model'],
+        'direction':asset['direction'],
+        'voice':asset['voice'],
+        'created_at':asset['created_at'],
+    }
 
 async def _rate_limit(db, key, max_count, seconds=3600):
     from datetime import timedelta
@@ -238,20 +289,75 @@ async def _rate_limit(db, key, max_count, seconds=3600):
     if result['count'] > max_count: raise AppError(429,'rate_limited','Too many requests. Please try again later.')
 
 @router.post('/api/v1/tests', status_code=201)
-async def create_test(body: CreateTest, request: Request, db=Depends(require_database)):
+async def create_test(
+    body: CreateTest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias='Idempotency-Key'),
+    db=Depends(require_indexed_database),
+):
     await _rate_limit(db, 'publish:ip:' + _ip_hash(request), settings.publish_ip_hourly)
+    key_hash = None
+    request_hash = None
+    if idempotency_key is not None:
+        if not re.fullmatch(r'[A-Za-z0-9._~-]{16,128}', idempotency_key):
+            raise AppError(422, 'invalid_idempotency_key', 'Idempotency-Key must be 16 to 128 URL-safe characters.')
+        key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
+        request_hash = hashlib.sha256(json.dumps(body.model_dump(mode='json'), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        existing = await db.heardit_tests.find_one({'idempotency_key_hash':key_hash})
+        if existing:
+            if existing.get('publish_request_hash') != request_hash:
+                raise AppError(409, 'idempotency_conflict', 'This publish key was already used for different test settings.')
+            return _publish_payload(existing, key_hash)
     await _rate_limit(db, 'publish:audio:' + body.audio_id, settings.publish_audio_hourly)
     await _rate_limit(db, 'publish:global', settings.tests_daily_cap, 86400)
     asset = await db.audio_assets.find_one({'id':body.audio_id})
     if not asset: raise AppError(422,'audio_required','Generate and save audio before publishing this test.')
-    if asset.get('input_text') != f'{body.direction.strip()} {body.sentence.strip()}': raise AppError(422,'audio_mismatch','Generate audio for the current sentence and direction before publishing.')
-    test_id, token = secrets.token_urlsafe(12), secrets.token_urlsafe(32)
+    if asset.get('input_text') != canonical_speech_text(body.direction, body.sentence): raise AppError(422,'audio_mismatch','Generate audio for the current sentence and direction before publishing.')
+    test_id = secrets.token_urlsafe(12)
+    token = _idempotent_management_token(test_id, key_hash) if key_hash else secrets.token_urlsafe(32)
     labels = [body.intended_label.strip(), *body.distractors]
     descriptions = body.option_descriptions or ['', '', '', '']
     options = [{'id':str(uuid.uuid4()), 'label':label, 'description':description} for label, description in zip(labels, descriptions)]
-    doc = {'id':test_id,'sentence':body.sentence,'intended_label':body.intended_label.strip(),'intended_option_id':options[0]['id'],'distractors':body.distractors,'options':options,'direction':body.direction,'model':asset['model'],'audio_id':asset['id'],'creator_management_token_hash':hashlib.sha256(token.encode()).hexdigest(),'status':'published','created_at':now()}
-    await db.heardit_tests.insert_one(doc)
-    return {'id':test_id,'management_token':token,'status':'published'}
+    doc = {
+        'id':test_id,
+        'sentence':body.sentence.strip(),
+        'intended_label':body.intended_label.strip(),
+        'intended_option_id':options[0]['id'],
+        'distractors':body.distractors,
+        'options':options,
+        'direction':' '.join(body.direction.split()),
+        'model':asset['model'],
+        'audio_id':asset['id'],
+        'creator_management_token_hash':hashlib.sha256(token.encode()).hexdigest(),
+        'status':'published',
+        'created_at':now(),
+    }
+    if key_hash:
+        doc['idempotency_key_hash'] = key_hash
+        doc['publish_request_hash'] = request_hash
+    try:
+        await db.heardit_tests.insert_one(doc)
+    except DuplicateKeyError:
+        if key_hash:
+            winner = await db.heardit_tests.find_one({'idempotency_key_hash':key_hash})
+            if winner:
+                if winner.get('publish_request_hash') != request_hash:
+                    raise AppError(409, 'idempotency_conflict', 'This publish key was already used for different test settings.')
+                return _publish_payload(winner, key_hash)
+        raise AppError(409, 'publish_conflict', 'This test could not be published because its identifier already exists. Retry with a new key.')
+    return _publish_payload(doc, key_hash, token)
+
+
+def _idempotent_management_token(test_id: str, key_hash: str | None) -> str:
+    secret = settings.signing_secret.get_secret_value().encode()
+    digest = hmac.new(secret, f'heardit-management-v1:{test_id}:{key_hash}'.encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode().rstrip('=')
+
+
+def _publish_payload(doc, key_hash: str | None, token: str | None = None):
+    if key_hash:
+        token = _idempotent_management_token(doc['id'], key_hash)
+    return {'id':doc['id'],'management_token':token,'status':doc['status']}
 
 def _require_management_token(test, token):
     expected = test.get('creator_management_token_hash', '')
@@ -279,7 +385,7 @@ async def public_test(test_id: str, participant_id: str, x_assignment_token: str
     return result
 
 @router.post('/api/v1/tests/{test_id}/assignment')
-async def assignment(test_id: str, body: AssignmentRequest, request: Request, x_management_token: str | None = Header(default=None), db=Depends(require_database)):
+async def assignment(test_id: str, body: AssignmentRequest, request: Request, x_management_token: str | None = Header(default=None), db=Depends(require_indexed_database)):
     participant = body.participant_id
     await _rate_limit(db, 'assignment:ip:' + _ip_hash(request), settings.assignment_ip_minute, 60)
     await _rate_limit(db, 'assignment:test:' + test_id, settings.assignment_test_minute, 60)
@@ -301,7 +407,7 @@ async def assignment(test_id: str, body: AssignmentRequest, request: Request, x_
     return {'condition':row['condition'], 'assignment_token':_assignment_token(test_id, hashed, row['condition'], issued_at), 'creator_preview':False}
 
 @router.post('/api/v1/tests/{test_id}/votes', status_code=201)
-async def vote(test_id: str, body: VoteRequest, request: Request, x_management_token: str | None = Header(default=None), db=Depends(require_database)):
+async def vote(test_id: str, body: VoteRequest, request: Request, x_management_token: str | None = Header(default=None), db=Depends(require_indexed_database)):
     await _rate_limit(db, 'vote:ip:' + _ip_hash(request), settings.vote_ip_minute, 60)
     await _rate_limit(db, 'vote:test:' + test_id, settings.vote_test_minute, 60)
     await _rate_limit(db, 'vote:test:daily:' + test_id, settings.votes_per_test_daily_cap, 86400)
@@ -335,16 +441,74 @@ def wilson(k,n,z=1.959963984540054):
     return [max(0,center-margin),min(1,center+margin)]
 
 @router.get('/api/v1/audio/{audio_id}')
-async def get_audio(audio_id: str, db=Depends(require_database)):
-    if not await db.audio_assets.find_one({'id':audio_id}): raise AppError(404,'audio_not_found','Audio not found.')
-    asset=await db.audio_assets.find_one({'id':audio_id})
-    try: content=await _gridfs(db).open_download_stream(asset['gridfs_id'])
-    except Exception as exc: raise AppError(404,'audio_not_found','Audio not found.') from exc
-    data=await content.read()
-    return Response(data,media_type='audio/mpeg',headers={'Cache-Control':'public,max-age=31536000,immutable','X-Content-Type-Options':'nosniff'})
+async def get_audio(audio_id: str, request: Request, db=Depends(require_database)):
+    asset = await db.audio_assets.find_one({'id':audio_id})
+    if not asset:
+        raise AppError(404, 'audio_not_found', 'Audio not found.')
+    try:
+        content = await _gridfs(db).open_download_stream(asset['gridfs_id'])
+    except Exception as exc:
+        raise AppError(404, 'audio_not_found', 'Audio not found.') from exc
+
+    total = int(asset.get('file_size') or content.length)
+    if total <= 0:
+        await content.close()
+        raise AppError(404, 'audio_not_found', 'Audio not found.')
+    start, end = 0, total - 1
+    status_code = 200
+    range_header = request.headers.get('range')
+    headers = {
+        'Accept-Ranges':'bytes',
+        'Cache-Control':'public, max-age=31536000, immutable',
+        'X-Content-Type-Options':'nosniff',
+        'Content-Length':str(total),
+    }
+    if range_header:
+        match = re.fullmatch(r'bytes=(\d*)-(\d*)', range_header.strip())
+        if not match or not any(match.groups()):
+            await content.close()
+            return Response(status_code=416, headers={**headers, 'Content-Length':'0', 'Content-Range':f'bytes */{total}'})
+        first, last = match.groups()
+        if not first:
+            suffix_length = int(last)
+            if suffix_length <= 0:
+                await content.close()
+                return Response(status_code=416, headers={**headers, 'Content-Length':'0', 'Content-Range':f'bytes */{total}'})
+            start = max(0, total - suffix_length)
+        else:
+            start = int(first)
+            end = min(total - 1, int(last)) if last else total - 1
+        if start >= total or start > end:
+            await content.close()
+            return Response(status_code=416, headers={**headers, 'Content-Length':'0', 'Content-Range':f'bytes */{total}'})
+        status_code = 206
+        headers['Content-Range'] = f'bytes {start}-{end}/{total}'
+        headers['Content-Length'] = str(end - start + 1)
+
+    await content.seek(start)
+
+    async def audio_chunks():
+        remaining = end - start + 1
+        try:
+            while remaining:
+                chunk = await content.read(min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+        finally:
+            await content.close()
+
+    return StreamingResponse(
+        audio_chunks(),
+        status_code=status_code,
+        media_type=asset.get('content_type') or 'audio/mpeg',
+        headers=headers,
+    )
 
 async def initialize_heardit(db):
     await db.heardit_tests.create_index('id',unique=True)
+    await db.heardit_tests.create_index('idempotency_key_hash',unique=True,sparse=True)
     await db.audio_assets.create_index('cache_key',unique=True,sparse=True)
     await db.heardit_assignments.create_index([('test_id',ASCENDING),('participant_hash',ASCENDING)],unique=True)
     await db.heardit_votes.create_index([('test_id',ASCENDING),('anonymous_participant_hash',ASCENDING)],unique=True)

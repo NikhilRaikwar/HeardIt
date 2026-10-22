@@ -67,7 +67,14 @@ test("text condition receives sentence but not audio URL, and results render exp
 
 test("creator generates, reviews, and publishes a test through the staged journey", async ({ page }) => {
   await page.route("**/api/v1/audio/generate", route => route.fulfill({ json: { audio_id: "saved-audio", url: "/api/v1/audio/saved-audio", cached: false, model: "s2.1-pro-free", direction: "[curious]", voice: "fish-account-default-v1", created_at: "2026-10-22T00:00:00Z" } }));
-  await page.route("**/api/v1/tests**", route => route.request().method() === "POST" ? route.fulfill({ status: 201, json: { id: "published-test", status: "published", management_token: "private-token" } }) : route.continue());
+  await page.route("**/api/v1/tests**", route => {
+    if (route.request().method() !== "POST") return route.continue();
+    const headers = route.request().headers();
+    const headerNames = Object.keys(headers).map(name => name.toLowerCase());
+    expect(headerNames).toContain("idempotency-key");
+    expect(Object.entries(headers).find(([name]) => name.toLowerCase() === "idempotency-key")?.[1]).toMatch(/^[A-Za-z0-9-]{16,}$/);
+    return route.fulfill({ status: 201, json: { id: "published-test", status: "published", management_token: "private-token" } });
+  });
   await page.route("**/api/v1/tests/published-test/creator", route => route.fulfill({ json: { id: "published-test", sentence: "I thought you said you’d be here by now.", intended_label: "Curious", distractors: ["Annoyed", "Hurt", "Playful"], direction: "[curious, slightly surprised, gentle tone]", model: "s2.1-pro-free", audio_id: "saved-audio", created_at: "2026-10-22T00:00:00Z", status: "published" } }));
   await page.route("**/api/v1/audio/saved-audio", route => route.fulfill({ status: 200, contentType: "audio/mpeg", body: Buffer.from("mock audio") }));
   await page.goto("/create");

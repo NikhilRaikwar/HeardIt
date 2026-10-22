@@ -332,7 +332,7 @@ html:has(.hi-landing){scroll-snap-type:y proximity}
  .hi-landing-footer{padding-top:27px;padding-bottom:18px}.hi-landing-footer .hi-footer-main>div:first-child>p{font-size:12px}.hi-landing-footer .hi-footer-links>div>a,.hi-landing-footer .hi-footer-links>div>button{font-size:12px}.hi-landing-footer .hi-footer-bottom{font-size:10px}
  .hi-info-dialog{padding:27px 22px}.hi-info-dialog h2{font-size:24px}.hi-info-dialog p{font-size:13px}
 }
-.hi-results.hi-page-loading{min-height:calc(100svh - 74px);display:grid;place-items:center;text-align:center;padding-top:0;padding-bottom:0}
+.hi-results.hi-page-loading{position:fixed;inset:74px 0 0;left:0;width:100vw;max-width:none;min-height:0;margin:0;padding:0;display:grid;place-items:center;text-align:center;z-index:2;background:#fcfbfe}
 .hi-page-loading>div{display:flex;align-items:center;justify-content:center;gap:11px;color:#807986;font-size:14px}
 
 /* Creator studio layout */

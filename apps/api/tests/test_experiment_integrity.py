@@ -21,7 +21,8 @@ def db():
 
 
 @pytest.fixture
-async def client(db):
+async def client(db, monkeypatch):
+    monkeypatch.setattr(experiments, '_indexes_ready', False)
     app.dependency_overrides[require_database] = lambda: db
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as value:
         yield value

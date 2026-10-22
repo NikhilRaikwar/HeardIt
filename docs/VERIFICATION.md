@@ -21,9 +21,9 @@ Starting commit: `0e415a0`. Branch renamed from `harden/10-of-10` to `engineerin
 
 Raw command logs and Playwright failure traces are local ignored artifacts under `temp/verification` and `test-results`. They are not credentials or published evidence of provider requests.
 
-## Not yet verified
+## Baseline status before hardening
 
-Hardening phases, real provider calls on this branch, live deployment, and GitHub CI have not run yet. Baseline live URLs above are configuration inputs, not a claim that the hardened branch is deployed.
+At this point, hardening phases, real provider calls, live deployment, and GitHub CI had not run. Baseline live URLs above are configuration inputs, not a claim that this branch is deployed.
 
 ## Phase 1 — experiment integrity and abuse protection
 
@@ -38,3 +38,21 @@ Executed on 2026-10-23 (Asia/Calcutta), after implementing signed assignment tok
 | `npm run api:test` | **42 passed, 11 failed in 8.91s** while Phase 2 reliability work is in progress. All 11 failures are in `tests/test_reliability.py`: the generation route is not yet using the service dependency; idempotent publish, audio Range responses, and lazy index initialization are incomplete. |
 
 No external Fish Audio or AIML synthesis/suggestion request was made during Phase 1. Mongo connectivity from the baseline check remains local only; this branch has not been deployed.
+
+## Phase 2 — reliability
+
+Executed on 2026-10-23 (Asia/Calcutta), after consolidating Fish synthesis behind `FishTTSService`, canonicalizing stored speech text, adding concurrent cache-race cleanup, publish idempotency, lazy Mongo index initialization, and GridFS byte-range streaming.
+
+| Command | Observed result |
+| --- | --- |
+| `HEARDIT_MONGO_TEST_URI=mongodb://127.0.0.1:27017 npm run api:test` | **54 passed in 2.27s**, including mocked Fish success/error/timeout/cache tests and a real local Mongo integration test. The integration test simulates database unavailability at startup, then uses MongoDB, confirms unique vote and TTL indexes exist before accepting a vote, and checks `/health.indexes_ready`. It creates and drops a uniquely named temporary local database. |
+| `npm run typecheck` | Exit 0 after wiring the idempotency key into the active creator journey. |
+| `npm run lint` | Exit 0; 0 errors, the same 2 existing UI warnings. |
+| `API_INTERNAL_URL=https://api-six-iota-fp3oos7pc0.vercel.app NEXT_PUBLIC_APP_URL=https://heardit-six.vercel.app npm run build` | Exit 0. Next.js 15.5.28 compiled and generated all 8 static pages; the same 2 warnings appeared. This builds locally with those configured URLs; it does not deploy this branch. |
+| `PLAYWRIGHT_PORT=3115 npm run test:e2e` | **21 passed in 47.8s** across 1440px desktop, 768px tablet and 375px mobile projects. Includes the staged creator publish flow with the idempotency header, creator preview, blind audio/text payloads, and centered results loading state. API responses are mocked in these browser tests. |
+
+Provider API tests use mocked HTTPX responses. No genuine Fish Audio or AIML request was made; live provider credentials were not exercised by these checks.
+
+## Remaining verification
+
+Phases 3–5, real provider calls on this branch, live deployment, and GitHub CI have not run yet. Baseline live URLs above are configuration inputs, not a claim that the hardened branch is deployed.

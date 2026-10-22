@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, AudioLines, Check, ClipboardCheck, Copy, FileText, Headphones, LoaderCircle, PencilLine, RefreshCw, Share2, Sparkles, Volume2 } from "lucide-react";
 import { track } from "@/components/heardit";
 
@@ -97,6 +97,7 @@ function ListenerPreview({ draft, audio, mode, onMode }: { draft: Draft; audio: 
 
 export function CreatorJourney() {
   const router = useRouter();
+  const publishAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const [draft, setDraft] = useState<Draft>(defaults);
   const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState<"suggest" | "direction" | "generate" | "publish" | "">("");
@@ -173,15 +174,25 @@ export function CreatorJourney() {
     if (!draft.audio) { setError("Generate and save audio before publishing."); return; }
     setBusy("publish"); setError("");
     try {
-      const result = await api<Published>("/tests", {
+      const body = {
         sentence: draft.sentence.trim(), intended_label: draft.options[0].label.trim(),
         distractors: draft.options.slice(1).map(option => option.label.trim()),
         option_descriptions: draft.options.map(option => option.description.trim()),
         direction: draft.direction.trim(), audio_id: draft.audio.audio_id,
-      });
+      };
+      const fingerprint = JSON.stringify(body);
+      if (!publishAttempt.current || publishAttempt.current.fingerprint !== fingerprint) {
+        let saved: { fingerprint?: string; key?: string } | null = null;
+        try { saved = JSON.parse(sessionStorage.getItem("heardit-publish-attempt-v1") || "null") as { fingerprint?: string; key?: string } | null; } catch {}
+        const key = saved?.fingerprint === fingerprint && typeof saved.key === "string" ? saved.key : crypto.randomUUID();
+        publishAttempt.current = { fingerprint, key };
+        sessionStorage.setItem("heardit-publish-attempt-v1", JSON.stringify(publishAttempt.current));
+      }
+      const result = await api<Published>("/tests", body, { "Idempotency-Key": publishAttempt.current.key });
       localStorage.setItem(`heardit-owner-${result.id}`, result.management_token);
       localStorage.setItem(`heardit-owner-id-${result.id}`, "1");
       localStorage.removeItem(DRAFT_KEY);
+      sessionStorage.removeItem("heardit-publish-attempt-v1");
       track("test_published", { test_id: result.id });
       router.push(`/created/${result.id}`);
     } catch (reason) { setError((reason as Error).message); }

@@ -21,6 +21,7 @@ class FakeCursor:
 
 class FakeCollection:
     def __init__(self, rows=(), unique=()): self.rows = list(rows); self.unique = unique
+    async def create_index(self, keys, **options): return str(keys)
     async def find_one(self, query):
         return next((row for row in self.rows if all(row.get(k) == v for k,v in query.items())), None)
     async def insert_one(self, row):
