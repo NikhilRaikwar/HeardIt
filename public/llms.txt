@@ -1,0 +1,24 @@
+# HeardIt
+
+> HeardIt is a small listening experiment: one sentence, four interpretations, and a comparison of what listeners choose after hearing generated speech or reading the same text.
+
+## Public pages
+
+- [Home](/): Product overview, interactive demo when a genuine sample is configured, and answers to common questions.
+- [Create a listening test](/create): Creator studio. Each published test has a shareable listener link.
+
+## How the experiment works
+
+Creators write one sentence, choose one intended interpretation and three alternatives, set a Fish Audio voice direction, generate an MP3, and publish. Listeners are randomly assigned to hear the generated audio or read the exact sentence. They choose one of the same four interpretations; the intended answer is revealed after their vote.
+
+Results report observed responses by condition, answer distributions, and Wilson 95% confidence intervals. Results are exploratory and describe only the people who responded to that test. Samples below 20 responses are labeled preliminary. A difference between conditions is not proof of statistical significance or universal voice quality.
+
+## Technology
+
+HeardIt uses Next.js and TypeScript, a Python FastAPI service, MongoDB for experiment data and persisted MP3 assets, AIML API for optional creator suggestions, and Fish Audio for speech synthesis. AI suggestions are optional; creators review and approve all labels and direction before synthesis.
+
+## Machine-readable information
+
+- [Sitemap](/sitemap.xml)
+- [Robots rules](/robots.txt)
+- [Social preview image](/banner.png)
