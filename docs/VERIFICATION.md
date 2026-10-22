@@ -24,3 +24,17 @@ Raw command logs and Playwright failure traces are local ignored artifacts under
 ## Not yet verified
 
 Hardening phases, real provider calls on this branch, live deployment, and GitHub CI have not run yet. Baseline live URLs above are configuration inputs, not a claim that the hardened branch is deployed.
+
+## Phase 1 — experiment integrity and abuse protection
+
+Executed on 2026-10-23 (Asia/Calcutta), after implementing signed assignment tokens, proxy-aware IP handling, Mongo-backed public-write limits, optional Turnstile verification, and creator preview.
+
+| Command | Observed result |
+| --- | --- |
+| `npm run api:test -- tests/test_experiment_integrity.py tests/test_heardit.py` | **19 passed in 1.41s**. Covers legitimate assignment/vote, forged and switched conditions, token expiry and binding, duplicate vote, write limits and caps, forwarded-header trust behavior, optional CAPTCHA, and creator preview API behavior. |
+| `npm run typecheck` | Exit 0. |
+| `npm run lint` | Exit 0; 0 errors, 2 existing warnings in `floating-panel.tsx` and `iphone.tsx`. |
+| `npm run test:e2e -- --grep "creator opens a labelled|audio listener receives|text condition receives"` | Not completed: Playwright could not start its configured web server because port 3101 was occupied. A retry on port 3113 did not finish starting Next.js within 60 seconds and was interrupted. Browser coverage for these changes remains unverified. |
+| `npm run api:test` | **42 passed, 11 failed in 8.91s** while Phase 2 reliability work is in progress. All 11 failures are in `tests/test_reliability.py`: the generation route is not yet using the service dependency; idempotent publish, audio Range responses, and lazy index initialization are incomplete. |
+
+No external Fish Audio or AIML synthesis/suggestion request was made during Phase 1. Mongo connectivity from the baseline check remains local only; this branch has not been deployed.

@@ -1,5 +1,5 @@
 """HeardIt's public, privacy-preserving listening experiment API."""
-import hashlib, json, secrets, uuid
+import base64, binascii, hashlib, hmac, ipaddress, json, secrets, uuid
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -74,6 +74,7 @@ class CreateTest(BaseModel):
 class VoteRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     participant_id: str = Field(min_length=24, max_length=128)
+    assignment_token: str = Field(min_length=1, max_length=2048)
     selected_option_id: str | None = Field(default=None, min_length=1, max_length=64)
     selected_label: str | None = Field(default=None, min_length=1, max_length=60)
 
@@ -82,6 +83,79 @@ class VoteRequest(BaseModel):
         if bool(self.selected_option_id) == bool(self.selected_label):
             raise ValueError('Choose exactly one answer option.')
         return self
+
+class AssignmentRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    participant_id: str = Field(min_length=24, max_length=128)
+    captcha_token: str | None = Field(default=None, max_length=4096)
+
+def client_ip(request: Request) -> str:
+    """Forwarded addresses are trustworthy only behind a sanitizing trusted proxy."""
+    peer = request.client.host if request.client else 'unknown'
+    forwarded = request.headers.get('x-forwarded-for') if settings.trust_proxy else None
+    if not forwarded:
+        return peer
+    addresses = [value.strip() for value in forwarded.split(',')]
+    try:
+        if len(addresses) > 10:
+            raise ValueError('Too many proxy hops')
+        parsed = [str(ipaddress.ip_address(value)) for value in addresses]
+    except ValueError as exc:
+        raise AppError(400, 'invalid_forwarded_ip', 'The proxy supplied an invalid client address.') from exc
+    return parsed[0]
+
+def _ip_hash(request: Request) -> str:
+    return hashlib.sha256(client_ip(request).encode()).hexdigest()
+
+def _assignment_token(test_id: str, participant_hash: str, condition: str, issued_at: int) -> str:
+    payload = {'test_id':test_id, 'participant_hash':participant_hash, 'condition':condition, 'issued_at':issued_at}
+    encoded = base64.urlsafe_b64encode(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()).decode().rstrip('=')
+    signature = hmac.new(settings.signing_secret.get_secret_value().encode(), encoded.encode(), hashlib.sha256).hexdigest()
+    return f'{encoded}.{signature}'
+
+def _verify_assignment_token(token: str | None, test_id: str, participant_hash: str) -> dict:
+    try:
+        if not token or len(token) > 2048:
+            raise ValueError('Missing token')
+        encoded, signature = token.split('.')
+        expected = hmac.new(settings.signing_secret.get_secret_value().encode(), encoded.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError('Invalid signature')
+        payload = json.loads(base64.b64decode(encoded + '=' * (-len(encoded) % 4), altchars=b'-_', validate=True))
+        timestamp = int(datetime.now(timezone.utc).timestamp())
+        if (set(payload) != {'test_id','participant_hash','condition','issued_at'}
+                or payload['test_id'] != test_id or payload['participant_hash'] != participant_hash
+                or payload['condition'] not in ('audio','text') or type(payload['issued_at']) is not int
+                or not 0 <= timestamp - payload['issued_at'] <= settings.assignment_token_max_age):
+            raise ValueError('Token does not match this assignment')
+        return payload
+    except (ValueError, TypeError, KeyError, AttributeError, binascii.Error) as exc:
+        raise AppError(401, 'invalid_assignment_token', 'Your listening session is invalid or expired. Reopen the test.') from exc
+
+async def _verified_assignment(db, test_id: str, participant: str, token: str | None):
+    participant_hash = hashlib.sha256(participant.encode()).hexdigest()
+    payload = _verify_assignment_token(token, test_id, participant_hash)
+    row = await db.heardit_assignments.find_one({'test_id':test_id,'participant_hash':participant_hash})
+    if not row or row['condition'] != payload['condition']:
+        raise AppError(401, 'invalid_assignment_token', 'Your listening session no longer matches its saved assignment.')
+    return participant_hash, row
+
+async def _verify_captcha(token: str | None, request: Request):
+    if not settings.captcha_enabled:
+        return
+    key = settings.turnstile_secret.get_secret_value()
+    if not key:
+        raise AppError(503, 'captcha_unavailable', 'Listener verification is temporarily unavailable.')
+    if not token:
+        raise AppError(422, 'captcha_required', 'Complete listener verification before continuing.')
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post('https://challenges.cloudflare.com/turnstile/v0/siteverify', data={'secret':key,'response':token,'remoteip':client_ip(request)})
+            valid = response.is_success and response.json().get('success') is True
+    except (httpx.HTTPError, ValueError):
+        raise AppError(503, 'captcha_unavailable', 'Listener verification could not connect. Try again.')
+    if not valid:
+        raise AppError(422, 'captcha_rejected', 'Listener verification failed. Try again.')
 
 def _db(db):
     return db
@@ -103,8 +177,7 @@ async def health(db=Depends(require_database)):
 async def suggestions(body: SuggestRequest, request: Request, db=Depends(require_database)):
     if not settings.aiml_api_key.get_secret_value():
         raise AppError(503, 'aiml_not_configured', 'AI suggestions are unavailable right now. Add interpretations manually and continue.')
-    ip = request.client.host if request.client else 'unknown'
-    await _rate_limit(db, 'suggest:' + hashlib.sha256(ip.encode()).hexdigest(), 30)
+    await _rate_limit(db, 'suggest:' + _ip_hash(request), 30)
     schema = Suggestion.model_json_schema()
     headers = {'Authorization': f'Bearer {settings.aiml_api_key.get_secret_value()}'}
     error = None
@@ -130,9 +203,7 @@ async def suggestions(body: SuggestRequest, request: Request, db=Depends(require
 async def generate(body: GenerateRequest, request: Request, db=Depends(require_database)):
     key = settings.fish_api_key.get_secret_value()
     if not key: raise AppError(503, 'fish_not_configured', 'Fish Audio is not configured on the API server.')
-    ip = request.client.host if request.client else 'unknown'
-    ip_hash = hashlib.sha256(ip.encode()).hexdigest()
-    await _rate_limit(db, 'generate:' + ip_hash, 10)
+    await _rate_limit(db, 'generate:' + _ip_hash(request), 10)
     cache = _cache_key(body.sentence, body.direction)
     cached = await db.audio_assets.find_one({'cache_key': cache})
     if cached: return {'audio_id': cached['id'], 'url': f"/api/v1/audio/{cached['id']}", 'cached': True, 'model': cached['model'], 'direction': cached['direction'], 'voice': cached['voice'], 'created_at': cached['created_at']}
@@ -167,7 +238,10 @@ async def _rate_limit(db, key, max_count, seconds=3600):
     if result['count'] > max_count: raise AppError(429,'rate_limited','Too many requests. Please try again later.')
 
 @router.post('/api/v1/tests', status_code=201)
-async def create_test(body: CreateTest, db=Depends(require_database)):
+async def create_test(body: CreateTest, request: Request, db=Depends(require_database)):
+    await _rate_limit(db, 'publish:ip:' + _ip_hash(request), settings.publish_ip_hourly)
+    await _rate_limit(db, 'publish:audio:' + body.audio_id, settings.publish_audio_hourly)
+    await _rate_limit(db, 'publish:global', settings.tests_daily_cap, 86400)
     asset = await db.audio_assets.find_one({'id':body.audio_id})
     if not asset: raise AppError(422,'audio_required','Generate and save audio before publishing this test.')
     if asset.get('input_text') != f'{body.direction.strip()} {body.sentence.strip()}': raise AppError(422,'audio_mismatch','Generate audio for the current sentence and direction before publishing.')
@@ -193,12 +267,10 @@ async def creator_test(test_id: str, x_management_token: str | None = Header(def
     return {'id':test['id'],'sentence':test['sentence'],'intended_label':test['intended_label'],'distractors':test['distractors'],'direction':test['direction'],'model':test['model'],'audio_id':test['audio_id'],'created_at':test['created_at'],'status':test['status']}
 
 @router.get('/api/v1/tests/{test_id}/public')
-async def public_test(test_id: str, participant_id: str, db=Depends(require_database)):
+async def public_test(test_id: str, participant_id: str, x_assignment_token: str | None = Header(default=None), db=Depends(require_database)):
     doc = await db.heardit_tests.find_one({'id':test_id,'status':'published'})
     if not doc: raise AppError(404,'test_not_found','This listening test could not be found.')
-    participant_hash = hashlib.sha256(participant_id.encode()).hexdigest()
-    assigned = await db.heardit_assignments.find_one({'test_id':test_id,'participant_hash':participant_hash})
-    if not assigned: raise AppError(422,'assignment_required','Get your listening condition before opening the test.')
+    _, assigned = await _verified_assignment(db, test_id, participant_id, x_assignment_token)
     options = doc.get('options') or [{'id':hashlib.sha256(f"{test_id}:{label}".encode()).hexdigest()[:24], 'label':label, 'description':''} for label in [doc['intended_label'],*doc['distractors']]]
     secrets.SystemRandom().shuffle(options)
     result = {'id':doc['id'],'options':options,'labels':[item['label'] for item in options],'condition':assigned['condition']}
@@ -207,29 +279,36 @@ async def public_test(test_id: str, participant_id: str, db=Depends(require_data
     return result
 
 @router.post('/api/v1/tests/{test_id}/assignment')
-async def assignment(test_id: str, body: dict, x_management_token: str | None = Header(default=None), db=Depends(require_database)):
-    participant = body.get('participant_id','')
-    if not isinstance(participant,str) or not 24 <= len(participant) <= 128: raise AppError(422,'invalid_participant','A stable browser participant ID is required.')
+async def assignment(test_id: str, body: AssignmentRequest, request: Request, x_management_token: str | None = Header(default=None), db=Depends(require_database)):
+    participant = body.participant_id
+    await _rate_limit(db, 'assignment:ip:' + _ip_hash(request), settings.assignment_ip_minute, 60)
+    await _rate_limit(db, 'assignment:test:' + test_id, settings.assignment_test_minute, 60)
     test = await db.heardit_tests.find_one({'id':test_id,'status':'published'})
     if not test: raise AppError(404,'test_not_found','This listening test could not be found.')
-    if x_management_token and secrets.compare_digest(hashlib.sha256(x_management_token.encode()).hexdigest(), test['creator_management_token_hash']): raise AppError(403,'creator_preview','Creator previews are excluded from listener assignment.')
+    if x_management_token and secrets.compare_digest(hashlib.sha256(x_management_token.encode()).hexdigest(), test['creator_management_token_hash']):
+        return {'creator_preview':True, 'condition':'audio', 'assignment_token':None}
+    await _verify_captcha(body.captcha_token, request)
     hashed = hashlib.sha256(participant.encode()).hexdigest()
     row = await db.heardit_assignments.find_one({'test_id':test_id,'participant_hash':hashed})
     if not row:
         # Insert-once assignment is stable under concurrent refreshes.
         condition = secrets.choice(['audio','text'])
-        try: await db.heardit_assignments.insert_one({'test_id':test_id,'participant_hash':hashed,'condition':condition,'created_at':now()})
+        try: await db.heardit_assignments.insert_one({'test_id':test_id,'participant_hash':hashed,'condition':condition,'issued_at':int(datetime.now(timezone.utc).timestamp()),'created_at':now()})
         except DuplicateKeyError: pass
         row = await db.heardit_assignments.find_one({'test_id':test_id,'participant_hash':hashed})
-    return {'condition':row['condition']}
+    # Refreshing an expired token retains the persisted experimental condition.
+    issued_at = int(datetime.now(timezone.utc).timestamp())
+    return {'condition':row['condition'], 'assignment_token':_assignment_token(test_id, hashed, row['condition'], issued_at), 'creator_preview':False}
 
 @router.post('/api/v1/tests/{test_id}/votes', status_code=201)
-async def vote(test_id: str, body: VoteRequest, x_management_token: str | None = Header(default=None), db=Depends(require_database)):
+async def vote(test_id: str, body: VoteRequest, request: Request, x_management_token: str | None = Header(default=None), db=Depends(require_database)):
+    await _rate_limit(db, 'vote:ip:' + _ip_hash(request), settings.vote_ip_minute, 60)
+    await _rate_limit(db, 'vote:test:' + test_id, settings.vote_test_minute, 60)
+    await _rate_limit(db, 'vote:test:daily:' + test_id, settings.votes_per_test_daily_cap, 86400)
     test = await db.heardit_tests.find_one({'id':test_id,'status':'published'})
     if not test: raise AppError(404,'test_not_found','This listening test could not be found.')
     if x_management_token and secrets.compare_digest(hashlib.sha256(x_management_token.encode()).hexdigest(), test['creator_management_token_hash']): raise AppError(403,'creator_preview','Creator previews cannot submit listener votes.')
-    participant_hash = hashlib.sha256(body.participant_id.encode()).hexdigest()
-    assignment = await db.heardit_assignments.find_one({'test_id':test_id,'participant_hash':participant_hash})
+    participant_hash, assignment = await _verified_assignment(db, test_id, body.participant_id, body.assignment_token)
     options = test.get('options') or [{'id':hashlib.sha256(f"{test_id}:{label}".encode()).hexdigest()[:24], 'label':label} for label in [test['intended_label'],*test['distractors']]]
     selected = next((item for item in options if (body.selected_option_id and item['id'] == body.selected_option_id) or (body.selected_label and item['label'] == body.selected_label)), None)
     if not assignment or not selected: raise AppError(422,'invalid_vote','Choose one of the four interpretations shown.')

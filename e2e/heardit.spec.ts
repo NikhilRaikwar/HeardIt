@@ -19,9 +19,17 @@ test("creator explains a plain-text API failure instead of throwing a JSON parse
 test("audio listener receives no sentence before voting and sees the intended reading after", async ({ page }) => {
   const sentence = "The private sentence should not appear in an audio condition.";
   await page.addInitScript(() => localStorage.setItem("heardit-participant", "participant-" + "a".repeat(48)));
-  await page.route("**/api/v1/tests/test-a/public**", route => route.fulfill({ json: { id: "test-a", condition: "audio", labels: ["Sarcastic", "Pleased", "Annoyed", "Sad"], audio_url: "/api/v1/audio/opaque-audio" } }));
-  await page.route("**/api/v1/tests/test-a/assignment", route => route.fulfill({ json: { condition: "audio" } }));
-  await page.route("**/api/v1/tests/test-a/votes", route => route.fulfill({ json: { submitted: true, intended_label: "Sarcastic", correct: true } }));
+  const assignmentToken = "signed-assignment-from-server";
+  await page.route("**/api/v1/tests/test-a/public**", route => {
+    expect(route.request().headers()["x-assignment-token"]).toBe(assignmentToken);
+    return route.fulfill({ json: { id: "test-a", condition: "audio", labels: ["Sarcastic", "Pleased", "Annoyed", "Sad"], audio_url: "/api/v1/audio/opaque-audio" } });
+  });
+  await page.route("**/api/v1/tests/test-a/assignment", route => route.fulfill({ json: { condition: "audio", assignment_token: assignmentToken, creator_preview: false } }));
+  await page.route("**/api/v1/tests/test-a/votes", route => {
+    expect(route.request().postDataJSON()).toMatchObject({ assignment_token: assignmentToken, selected_label: "Sarcastic" });
+    expect(route.request().postDataJSON()).not.toHaveProperty("condition");
+    return route.fulfill({ json: { submitted: true, intended_label: "Sarcastic", correct: true } });
+  });
   await page.route("**/api/v1/audio/opaque-audio", route => route.fulfill({ status: 200, contentType: "audio/mpeg", body: Buffer.from("mocked audio") }));
   await page.goto("/t/test-a");
   await expect(page.getByRole("heading", { name: "What do you hear?" })).toBeVisible();
@@ -37,8 +45,8 @@ test("audio listener receives no sentence before voting and sees the intended re
 
 test("text condition receives sentence but not audio URL, and results render explicit zero-vote states", async ({ page }) => {
   const sentence = "I thought you would be here by now.";
-  await page.addInitScript(() => { localStorage.setItem("heardit-participant", "participant-" + "b".repeat(48)); localStorage.setItem("heardit-owner-test-b", "private-test-token"); });
-  await page.route("**/api/v1/tests/test-b/assignment", route => route.fulfill({ json: { condition: "text" } }));
+  await page.addInitScript(() => { localStorage.setItem("heardit-participant", "participant-" + "b".repeat(48)); });
+  await page.route("**/api/v1/tests/test-b/assignment", route => route.fulfill({ json: { condition: "text", assignment_token: "signed-text-assignment", creator_preview: false } }));
   await page.route("**/api/v1/tests/test-b/public**", route => route.fulfill({ json: { id: "test-b", condition: "text", sentence, labels: ["Pleased", "Sarcastic", "Worried", "Annoyed"] } }));
   await page.route("**/api/v1/tests/test-b/results", route => route.fulfill({ json: {
     id: "test-b", intended_label: "Sarcastic", labels: ["Sarcastic", "Pleased", "Worried", "Annoyed"], total: 0,
@@ -49,6 +57,7 @@ test("text condition receives sentence but not audio URL, and results render exp
   await page.goto("/t/test-b");
   await expect(page.getByText(sentence)).toBeVisible();
   await expect(page.locator("audio")).toHaveCount(0);
+  await page.evaluate(() => localStorage.setItem("heardit-owner-test-b", "private-test-token"));
   await page.goto("/r/test-b", { waitUntil: "domcontentloaded" });
   await expect(page.getByText("Preliminary results")).toBeVisible();
   await expect(page.getByText("Insufficient data").first()).toBeVisible();
@@ -72,10 +81,45 @@ test("creator generates, reviews, and publishes a test through the staged journe
   await page.getByRole("button", { name: /Continue to review/ }).click();
   await expect(page.getByRole("heading", { name: "Review your test" })).toBeVisible();
   if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-review-desktop.png", fullPage: true });
+  const publishedResponse = page.waitForResponse(response => response.url().endsWith("/api/v1/tests") && response.request().method() === "POST");
   await page.getByRole("button", { name: /Publish test/ }).click();
+  expect((await publishedResponse).status()).toBe(201);
   await expect(page.locator(".hi-error")).toHaveCount(0);
-  await expect(page).toHaveURL(/\/created\/published-test$/);
+  await expect(page).toHaveURL(/\/created\/published-test$/, { timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Your test is live." })).toBeVisible();
   if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-share-desktop.png", fullPage: true });
   await expect(page.getByRole("link", { name: /Open listening test/ })).toHaveAttribute("href", "/t/published-test");
+});
+
+test("creator opens a labelled read-only preview without entering the listener experiment", async ({ page }) => {
+  let assignments = 0;
+  let votes = 0;
+  await page.addInitScript(() => localStorage.setItem("heardit-owner-preview-test", "creator-capability"));
+  await page.route("**/api/v1/tests/preview-test/creator", route => {
+    expect(route.request().headers()["x-management-token"]).toBe("creator-capability");
+    return route.fulfill({ json: { id: "preview-test", sentence: "This stays in the creator preview.", intended_label: "Curious", distractors: ["Annoyed", "Hurt", "Playful"], audio_id: "preview-audio" } });
+  });
+  await page.route("**/api/v1/tests/preview-test/assignment", route => { assignments++; return route.abort(); });
+  await page.route("**/api/v1/tests/preview-test/votes", route => { votes++; return route.abort(); });
+  await page.route("**/api/v1/audio/preview-audio", route => route.fulfill({ status: 200, contentType: "audio/mpeg", body: Buffer.from("mock audio") }));
+  await page.goto("/t/preview-test");
+  await expect(page.getByRole("heading", { name: "Preview your listening test" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("No listener assignment or vote is recorded");
+  await expect(page.getByRole("button", { name: "Submit answer" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "View private results" })).toHaveAttribute("href", "/r/preview-test");
+  expect(assignments).toBe(0);
+  expect(votes).toBe(0);
+});
+
+test("private results loading status stays centered while results are pending", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("heardit-owner-pending-results", "creator-capability"));
+  await page.route("**/api/v1/tests/pending-results/results", () => new Promise<void>(() => undefined));
+  await page.goto("/r/pending-results");
+  const loader = page.locator(".hi-page-loading > div");
+  await expect(loader).toContainText("Loading results");
+  const bounds = await loader.boundingBox();
+  const viewport = page.viewportSize();
+  expect(bounds).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(Math.abs(bounds!.x + bounds!.width / 2 - viewport!.width / 2)).toBeLessThan(3);
 });

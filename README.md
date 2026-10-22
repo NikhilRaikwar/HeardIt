@@ -72,6 +72,10 @@ The Next.js app proxies API requests to FastAPI. Provider credentials stay on th
 - The blind-test response does not disclose the intended meaning or voice direction before a vote.
 - Audio and text groups receive the same sentence and answer choices.
 - A unique test/participant key prevents ordinary repeat votes from the same browser identifier; it is not identity verification.
+- Assignment tokens bind the test, participant hash, condition and issue time with an HMAC. Public test reads and votes verify the signature and the persisted assignment. Tokens cannot move a participant between conditions or bypass the unique vote index.
+- Mongo-backed per-IP and per-test write limits and daily publishing/voting caps constrain bursts. Rotating browser IDs, clearing storage, VPNs and distributed clients can still create additional participants. These controls are basic abuse prevention, not proof of unique humans.
+- Forwarded IP headers are ignored unless `HEARDIT_TRUST_PROXY=true`. Enable that setting only behind a controlled proxy that overwrites client-supplied forwarding headers; keep the backend inaccessible through an untrusted forwarding path. An optional CAPTCHA hook is disabled by default.
+- Creators opening their own listener link see a labelled, read-only preview; it does not create a listener assignment or submit a vote.
 - Results are calculated in Python. Empty groups show insufficient data, and results under 20 total responses are marked preliminary.
 - Positive voice lift is presented as a sample difference, not proof of statistical significance or general model quality.
 - Fish audio is cached by synthesis inputs. The landing demo stays in setup state until a genuine sample MP3 is configured.
