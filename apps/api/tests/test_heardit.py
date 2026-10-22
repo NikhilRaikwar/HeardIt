@@ -3,9 +3,12 @@ import hashlib
 import pytest
 from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
+from starlette.requests import Request
 
 from app.core.errors import AppError
-from app.heardit import Suggestion, CreateTest, VoteRequest, _cache_key, assignment, public_test, results, vote, wilson
+from app.routers.heardit import _cache_key, admin_stats, assignment, product_event, public_product_stats, public_test, results, sanitize_event_properties, vote
+from app.schemas.heardit import AssignmentRequest, CreateTest, ProductEventRequest, Suggestion, VoteRequest
+from app.services.statistics import wilson
 
 MANAGEMENT_TOKEN = 'creator-management-token-for-tests'
 
@@ -20,12 +23,38 @@ class FakeCursor:
 
 class FakeCollection:
     def __init__(self, rows=(), unique=()): self.rows = list(rows); self.unique = unique
+    async def create_index(self, keys, **options): return str(keys)
     async def find_one(self, query):
         return next((row for row in self.rows if all(row.get(k) == v for k,v in query.items())), None)
     async def insert_one(self, row):
         if self.unique and any(all(old.get(k) == row.get(k) for k in self.unique) for old in self.rows): raise DuplicateKeyError('duplicate')
         self.rows.append(row)
     def find(self, query): return FakeCursor([r for r in self.rows if all(r.get(k) == v for k,v in query.items())])
+    async def find_one_and_update(self, query, update, **kwargs):
+        row = await self.find_one(query)
+        if row is None:
+            row = {**query, **update.get('$setOnInsert', {})}
+            self.rows.append(row)
+        for key, value in update.get('$inc', {}).items(): row[key] = row.get(key, 0) + value
+        return row
+    async def aggregate(self, pipeline):
+        test_id = pipeline[0]['$match']['test_id']
+        counts = {}
+        for row in self.rows:
+            if row.get('test_id') != test_id:
+                continue
+            key = (row['assigned_condition'], row['selected_label'])
+            aggregate = counts.setdefault(key, {'count': 0, 'correct': 0})
+            aggregate['count'] += 1
+            aggregate['correct'] += int(row['correct'])
+        return FakeCursor([
+            {'_id': {'condition': condition, 'selected_label': label}, **aggregate}
+            for (condition, label), aggregate in sorted(counts.items())
+        ])
+    async def count_documents(self, query):
+        return sum(all(row.get(key) == value for key, value in query.items()) for row in self.rows)
+    async def distinct(self, key):
+        return list(dict.fromkeys(row[key] for row in self.rows if key in row))
 
 
 class FakeDB:
@@ -34,6 +63,16 @@ class FakeDB:
         self.heardit_assignments = FakeCollection(unique=('test_id','participant_hash'))
         self.heardit_votes = FakeCollection(unique=('test_id','anonymous_participant_hash'))
         self.audio_assets = FakeCollection([{'id':'audio-1','model':'s2.1-pro-free','input_text':'[dry] I thought you would be here.'}])
+        self.heardit_rate_limits = FakeCollection(unique=('_id',))
+        self.heardit_events = FakeCollection()
+
+
+def request(headers=(), ip='192.0.2.1'):
+    return Request({'type':'http', 'method':'POST', 'path':'/', 'headers':[(key.lower().encode(), value.encode()) for key, value in headers], 'client':(ip, 1234)})
+
+
+async def assigned_session(db, participant):
+    return await assignment('test-1', AssignmentRequest(participant_id=participant), request(), x_management_token=None, db=db)
 
 
 def test_suggestion_requires_four_distinct_interpretations():
@@ -76,10 +115,10 @@ def test_wilson_interval_and_zero_response_behavior():
 @pytest.mark.asyncio
 async def test_assignment_is_stable_and_public_payload_hides_other_condition():
     db = FakeDB(); participant = 'p' * 48
-    first = await assignment('test-1', {'participant_id':participant}, x_management_token=None, db=db)
-    second = await assignment('test-1', {'participant_id':participant}, x_management_token=None, db=db)
-    assert first == second
-    public = await public_test('test-1', participant_id=participant, db=db)
+    first = await assigned_session(db, participant)
+    second = await assigned_session(db, participant)
+    assert first['condition'] == second['condition']
+    public = await public_test('test-1', participant_id=participant, x_assignment_token=first['assignment_token'], db=db)
     assert public['condition'] == first['condition']
     if first['condition'] == 'audio':
         assert 'sentence' not in public and 'audio_url' in public
@@ -91,14 +130,14 @@ async def test_assignment_is_stable_and_public_payload_hides_other_condition():
 @pytest.mark.asyncio
 async def test_vote_is_deduplicated_and_results_aggregate_saved_votes():
     db = FakeDB(); participant = 'v' * 48
-    await assignment('test-1', {'participant_id':participant}, x_management_token=None, db=db)
+    session = await assigned_session(db, participant)
     assigned = db.heardit_assignments.rows[0]['condition']
-    options = await public_test('test-1', participant_id=participant, db=db)
+    options = await public_test('test-1', participant_id=participant, x_assignment_token=session['assignment_token'], db=db)
     selected = next(option for option in options['options'] if option['label'] == 'Sarcastic')
-    body = VoteRequest(participant_id=participant, selected_option_id=selected['id'])
-    await vote('test-1', body, x_management_token=None, db=db)
+    body = VoteRequest(participant_id=participant, assignment_token=session['assignment_token'], selected_option_id=selected['id'])
+    await vote('test-1', body, request(), x_management_token=None, db=db)
     with pytest.raises(AppError) as error:
-        await vote('test-1', body, x_management_token=None, db=db)
+        await vote('test-1', body, request(), x_management_token=None, db=db)
     assert error.value.code == 'already_voted'
     with pytest.raises(AppError) as unauthorized:
         await results('test-1', x_management_token=None, db=db)
@@ -115,3 +154,118 @@ async def test_zero_response_results_return_insufficient_group_data():
     assert summary['total'] == 0
     assert summary['audio']['rate'] is None and summary['text']['rate'] is None
     assert summary['voice_lift'] is None and summary['preliminary']
+
+
+@pytest.mark.asyncio
+async def test_mongodb_result_aggregation_matches_previous_python_output():
+    db = FakeDB()
+    db.heardit_votes.rows = [
+        {'test_id':'test-1','assigned_condition':'audio','selected_label':'Sarcastic','correct':True},
+        {'test_id':'test-1','assigned_condition':'audio','selected_label':'Annoyed','correct':False},
+        {'test_id':'test-1','assigned_condition':'text','selected_label':'Sarcastic','correct':True},
+        {'test_id':'test-1','assigned_condition':'text','selected_label':'Pleased','correct':False},
+    ]
+    summary = await results('test-1', x_management_token=MANAGEMENT_TOKEN, db=db)
+    labels = ['Sarcastic','Pleased','Sad','Angry']
+
+    def previous_python_group(condition):
+        rows = [row for row in db.heardit_votes.rows if row['assigned_condition'] == condition]
+        n = len(rows)
+        correct = sum(row['correct'] for row in rows)
+        return {
+            'n':n,
+            'correct':correct,
+            'rate':correct / n if n else None,
+            'interval':wilson(correct, n),
+            'distribution':{label:sum(row['selected_label'].casefold() == label.casefold() for row in rows) for label in labels},
+        }
+
+    audio = previous_python_group('audio')
+    text = previous_python_group('text')
+    expected = {
+        'id':'test-1',
+        'intended_label':'Sarcastic',
+        'labels':labels,
+        'total':4,
+        'audio':audio,
+        'text':text,
+        'voice_lift':audio['rate'] - text['rate'],
+        'preliminary':True,
+        'interpretation':'Exploratory randomized sample; this difference is not proof of a universal voice effect.',
+    }
+    assert summary == expected
+
+
+@pytest.mark.asyncio
+async def test_public_product_stats_only_expose_aggregate_counts():
+    db = FakeDB()
+    db.heardit_votes.rows = [
+        {'test_id':'test-1','assigned_condition':'audio','selected_label':'Sarcastic','correct':True},
+        {'test_id':'test-1','assigned_condition':'text','selected_label':'Sad','correct':False},
+    ]
+    result = await public_product_stats(db)
+    assert result == {'published_tests':1,'tests_with_responses':1,'listener_responses':2}
+    assert not {'sentence','intended_label','direction','assigned_condition'} & result.keys()
+
+
+def test_analytics_sanitizer_keeps_only_bounded_product_dimensions():
+    safe = sanitize_event_properties({
+        'surface': 'studio', 'cached': True, 'model': 's2.1-pro-free',
+        'sentence': 'private sentence', 'direction': '[private direction]',
+        'management_token': 'secret-token', 'assignment_token': 'other-secret',
+        'participant_id': 'browser-id', 'selected_label': 'private choice',
+        'url': 'https://example.test/r/id#management_token=secret',
+    })
+    assert safe == {'surface': 'studio', 'cached': True, 'model': 's2.1-pro-free'}
+
+
+@pytest.mark.asyncio
+async def test_product_events_store_sanitized_properties_only():
+    db = FakeDB()
+    result = await product_event(ProductEventRequest(event='test_published', properties={
+        'surface': 'created_page', 'sentence': 'Do not store this', 'direction': '[secret]',
+        'management_token': 'secret', 'test_id': 'private-id',
+    }), request(), db)
+    assert result == {'accepted': True}
+    assert db.heardit_events.rows[0]['event'] == 'test_published'
+    assert db.heardit_events.rows[0]['properties'] == {'surface': 'created_page'}
+    assert 'sentence' not in str(db.heardit_events.rows)
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_are_private_and_funnel_counts_come_from_mongo(monkeypatch):
+    from pydantic import SecretStr
+    from app.routers import heardit as router_module
+
+    db = FakeDB()
+    db.heardit_votes.rows.append({'test_id': 'test-1', 'anonymous_participant_hash': 'p1'})
+    db.heardit_events.rows.extend([
+        {'event': 'create_started'}, {'event': 'create_started'},
+        {'event': 'test_published'}, {'event': 'vote_submitted'},
+    ])
+    test_admin_key = 'admin-test-key-' + ('x' * 40)
+    monkeypatch.setattr(router_module, 'settings', router_module.settings.model_copy(update={'admin_key': SecretStr(test_admin_key)}))
+    with pytest.raises(AppError) as unauthorized:
+        await admin_stats(x_admin_key='wrong', db=db)
+    assert unauthorized.value.status == 404
+    result = await admin_stats(x_admin_key=test_admin_key, db=db)
+    assert result == {
+        'tests_created': 1, 'tests_with_response': 1, 'votes': 1,
+        'funnel': {
+            'create_started': 2, 'voice_generation_completed': 0,
+            'test_published': 1, 'share_clicked': 0,
+            'test_opened': 0, 'vote_submitted': 1,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_are_disabled_when_admin_key_is_unset(monkeypatch):
+    from pydantic import SecretStr
+    from app.routers import heardit as router_module
+
+    monkeypatch.setattr(router_module, 'settings', router_module.settings.model_copy(update={'admin_key': SecretStr('')}))
+    with pytest.raises(AppError) as unavailable:
+        await admin_stats(x_admin_key='anything', db=FakeDB())
+    assert unavailable.value.status == 404
+    assert unavailable.value.code == 'admin_unavailable'

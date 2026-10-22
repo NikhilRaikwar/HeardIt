@@ -21,6 +21,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stats/public": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public Product Stats
+         * @description Return only product-wide counts; no test text, labels, or assignments.
+         */
+        get: operations["public_product_stats_api_v1_stats_public_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Product Event */
+        post: operations["product_event_api_v1_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Stats */
+        get: operations["admin_stats_api_v1_admin_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/suggestions": {
         parameters: {
             query?: never;
@@ -178,6 +232,55 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdminStatsResponse */
+        AdminStatsResponse: {
+            /** Tests Created */
+            tests_created: number;
+            /** Tests With Response */
+            tests_with_response: number;
+            /** Votes */
+            votes: number;
+            /** Funnel */
+            funnel: {
+                [key: string]: number;
+            };
+        };
+        /** AssignmentRequest */
+        AssignmentRequest: {
+            /** Participant Id */
+            participant_id: string;
+            /** Captcha Token */
+            captcha_token?: string | null;
+        };
+        /** AssignmentResponse */
+        AssignmentResponse: {
+            /**
+             * Condition
+             * @enum {string}
+             */
+            condition: "audio" | "text";
+            /** Assignment Token */
+            assignment_token: string | null;
+            /** Creator Preview */
+            creator_preview: boolean;
+        };
+        /** AudioGenerateResponse */
+        AudioGenerateResponse: {
+            /** Audio Id */
+            audio_id: string;
+            /** Url */
+            url: string;
+            /** Cached */
+            cached: boolean;
+            /** Model */
+            model: string;
+            /** Direction */
+            direction: string;
+            /** Voice */
+            voice: string;
+            /** Created At */
+            created_at: string;
+        };
         /** CreateTest */
         CreateTest: {
             /** Sentence */
@@ -193,6 +296,30 @@ export interface components {
             /** Option Descriptions */
             option_descriptions?: string[];
         };
+        /** CreatorTestResponse */
+        CreatorTestResponse: {
+            /** Id */
+            id: string;
+            /** Sentence */
+            sentence: string;
+            /** Intended Label */
+            intended_label: string;
+            /** Distractors */
+            distractors: string[];
+            /** Direction */
+            direction: string;
+            /** Model */
+            model: string;
+            /** Audio Id */
+            audio_id: string;
+            /** Created At */
+            created_at: string;
+            /**
+             * Status
+             * @constant
+             */
+            status: "published";
+        };
         /** GenerateRequest */
         GenerateRequest: {
             /** Sentence */
@@ -205,12 +332,145 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HealthResponse */
+        HealthResponse: {
+            /**
+             * Status
+             * @constant
+             */
+            status: "ok";
+            /**
+             * Database
+             * @constant
+             */
+            database: "mongodb";
+            /** Fish Configured */
+            fish_configured: boolean;
+            /** Indexes Ready */
+            indexes_ready: boolean;
+        };
+        /** ProductEventRequest */
+        ProductEventRequest: {
+            /**
+             * Event
+             * @enum {string}
+             */
+            event: "landing_viewed" | "create_started" | "ai_suggestion_requested" | "audio_generated" | "voice_generation_completed" | "test_published" | "test_opened" | "audio_played" | "vote_submitted" | "results_viewed" | "share_clicked" | "review_opened" | "share_page_viewed" | "voice_generation_started" | "voice_generation_failed";
+            /** Properties */
+            properties?: {
+                [key: string]: string | boolean | number;
+            };
+        };
+        /** ProductEventResponse */
+        ProductEventResponse: {
+            /**
+             * Accepted
+             * @constant
+             */
+            accepted: true;
+        };
+        /** PublicProductStats */
+        PublicProductStats: {
+            /** Published Tests */
+            published_tests: number;
+            /** Tests With Responses */
+            tests_with_responses: number;
+            /** Listener Responses */
+            listener_responses: number;
+        };
+        /** PublicTestResponse */
+        PublicTestResponse: {
+            /** Id */
+            id: string;
+            /** Options */
+            options: components["schemas"]["TestOption"][];
+            /** Labels */
+            labels: string[];
+            /**
+             * Condition
+             * @enum {string}
+             */
+            condition: "audio" | "text";
+            /** Sentence */
+            sentence?: string | null;
+            /** Audio Url */
+            audio_url?: string | null;
+        };
+        /** PublishResponse */
+        PublishResponse: {
+            /** Id */
+            id: string;
+            /** Management Token */
+            management_token: string;
+            /**
+             * Status
+             * @constant
+             */
+            status: "published";
+        };
+        /** ResultGroup */
+        ResultGroup: {
+            /** N */
+            n: number;
+            /** Correct */
+            correct: number;
+            /** Rate */
+            rate: number | null;
+            /** Interval */
+            interval: number[] | null;
+            /** Distribution */
+            distribution: {
+                [key: string]: number;
+            };
+        };
+        /** ResultsResponse */
+        ResultsResponse: {
+            /** Id */
+            id: string;
+            /** Intended Label */
+            intended_label: string;
+            /** Labels */
+            labels: string[];
+            /** Total */
+            total: number;
+            audio: components["schemas"]["ResultGroup"];
+            text: components["schemas"]["ResultGroup"];
+            /** Voice Lift */
+            voice_lift: number | null;
+            /** Preliminary */
+            preliminary: boolean;
+            /** Interpretation */
+            interpretation: string;
+        };
         /** SuggestRequest */
         SuggestRequest: {
             /** Sentence */
             sentence: string;
             /** Intended Label */
             intended_label?: string | null;
+        };
+        /** Suggestion */
+        Suggestion: {
+            /** Intended Label */
+            intended_label: string;
+            /** Alternative Labels */
+            alternative_labels: string[];
+            /** Fish Direction */
+            fish_direction: string;
+            /** Explanation */
+            explanation: string;
+        };
+        /** TestOption */
+        TestOption: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -229,10 +489,24 @@ export interface components {
         VoteRequest: {
             /** Participant Id */
             participant_id: string;
+            /** Assignment Token */
+            assignment_token: string;
             /** Selected Option Id */
             selected_option_id?: string | null;
             /** Selected Label */
             selected_label?: string | null;
+        };
+        /** VoteResponse */
+        VoteResponse: {
+            /**
+             * Submitted
+             * @constant
+             */
+            submitted: true;
+            /** Intended Label */
+            intended_label: string;
+            /** Correct */
+            correct: boolean;
         };
     };
     responses: never;
@@ -258,7 +532,91 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    public_product_stats_api_v1_stats_public_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicProductStats"];
+                };
+            };
+        };
+    };
+    product_event_api_v1_events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductEventRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductEventResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_stats_api_v1_admin_stats_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-admin-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStatsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -282,7 +640,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["Suggestion"];
                 };
             };
             /** @description Validation Error */
@@ -315,7 +673,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AudioGenerateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -332,7 +690,9 @@ export interface operations {
     create_test_api_v1_tests_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -348,7 +708,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PublishResponse"];
                 };
             };
             /** @description Validation Error */
@@ -381,7 +741,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CreatorTestResponse"];
                 };
             };
             /** @description Validation Error */
@@ -400,7 +760,9 @@ export interface operations {
             query: {
                 participant_id: string;
             };
-            header?: never;
+            header?: {
+                "x-assignment-token"?: string | null;
+            };
             path: {
                 test_id: string;
             };
@@ -414,7 +776,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PublicTestResponse"];
                 };
             };
             /** @description Validation Error */
@@ -441,9 +803,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["AssignmentRequest"];
             };
         };
         responses: {
@@ -453,7 +813,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AssignmentResponse"];
                 };
             };
             /** @description Validation Error */
@@ -490,7 +850,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["VoteResponse"];
                 };
             };
             /** @description Validation Error */
@@ -523,7 +883,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ResultsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -554,8 +914,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "audio/mpeg": string;
                 };
+            };
+            /** @description Partial audio response */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/mpeg": string;
+                };
+            };
+            /** @description The requested byte range is not satisfiable. */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

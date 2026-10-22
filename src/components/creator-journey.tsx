@@ -2,16 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, AudioLines, Check, ClipboardCheck, Copy, FileText, Headphones, LoaderCircle, PencilLine, RefreshCw, Share2, Sparkles, Volume2 } from "lucide-react";
 import { track } from "@/components/heardit";
+import { hearditApi } from "@/lib/heardit-api";
+import type { components } from "@/lib/api-schema";
 
 type OptionDraft = { label: string; description: string };
-type AudioAsset = { audio_id: string; url: string; cached: boolean; model: string; direction: string; voice: string; created_at: string };
+type AudioAsset = components["schemas"]["AudioGenerateResponse"];
 type Draft = { sentence: string; options: [OptionDraft, OptionDraft, OptionDraft, OptionDraft]; direction: string; audio: AudioAsset | null; step: 1 | 2 | 3 };
-type Suggestion = { intended_label: string; alternative_labels: [string, string, string]; fish_direction: string; explanation: string };
-type Published = { id: string; management_token: string; status: string };
-type ApiFailure = { error?: { message?: string }; detail?: string };
 
 const DRAFT_KEY = "heardit-creator-draft-v2";
 const defaults: Draft = {
@@ -26,23 +25,6 @@ const defaults: Draft = {
   audio: null,
   step: 1,
 };
-
-async function api<T,>(path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
-    method: body ? "POST" : "GET",
-    headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...headers },
-    body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-  });
-  let data: unknown;
-  try { data = await response.json(); }
-  catch { throw new Error(`HeardIt API returned an unexpected response (HTTP ${response.status}). Check that the FastAPI service is running and reachable.`); }
-  if (!response.ok) {
-    const failure = data as ApiFailure;
-    throw new Error(failure.error?.message || failure.detail || `HeardIt API request failed (HTTP ${response.status}).`);
-  }
-  return data as T;
-}
 
 function Wordmark() {
   return <Link href="/" className="hi-wordmark" aria-label="HeardIt home"><span className="hi-mark"><AudioLines size={18}/></span><span>heard<span>it</span></span></Link>;
@@ -97,6 +79,7 @@ function ListenerPreview({ draft, audio, mode, onMode }: { draft: Draft; audio: 
 
 export function CreatorJourney() {
   const router = useRouter();
+  const publishAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const [draft, setDraft] = useState<Draft>(defaults);
   const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState<"suggest" | "direction" | "generate" | "publish" | "">("");
@@ -139,7 +122,7 @@ export function CreatorJourney() {
     setError(""); setNotice(""); setBusy(mode === "all" ? "suggest" : "direction");
     track("ai_suggestion_requested", { surface: mode === "all" ? "interpretations" : "direction" });
     try {
-      const result = await api<Suggestion>("/suggestions", { sentence: draft.sentence.trim(), intended_label: draft.options[0].label.trim() || undefined });
+      const result = await hearditApi.suggest({ sentence: draft.sentence.trim(), intended_label: draft.options[0].label.trim() || undefined });
       if (mode === "direction") { updateDirection(result.fish_direction); setNotice("Direction suggestion is ready. Review and edit it before generating."); }
       else {
         setDraft(current => ({ ...current, options: [{ ...current.options[0], label: result.intended_label }, ...result.alternative_labels.map((label, i) => ({ ...current.options[i + 1], label }))] as Draft["options"], direction: result.fish_direction, audio: null, step: 1 }));
@@ -156,7 +139,7 @@ export function CreatorJourney() {
     if (!draft.direction.trim()) { setError("Add a Fish Audio direction before generating."); return; }
     setBusy("generate"); track("voice_generation_started", { model: "s2.1-pro-free" });
     try {
-      const result = await api<AudioAsset>("/audio/generate", { sentence: draft.sentence.trim(), direction: draft.direction.trim() });
+      const result = await hearditApi.generateAudio({ sentence: draft.sentence.trim(), direction: draft.direction.trim() });
       setDraft(current => ({ ...current, audio: { ...result, url: result.url.startsWith("http") ? result.url : result.url || `/api/v1/audio/${result.audio_id}` }, step: 2 }));
       track("voice_generation_completed", { cached: result.cached, model: result.model });
     } catch (reason) { setError((reason as Error).message); track("voice_generation_failed"); }
@@ -173,15 +156,25 @@ export function CreatorJourney() {
     if (!draft.audio) { setError("Generate and save audio before publishing."); return; }
     setBusy("publish"); setError("");
     try {
-      const result = await api<Published>("/tests", {
+      const body = {
         sentence: draft.sentence.trim(), intended_label: draft.options[0].label.trim(),
         distractors: draft.options.slice(1).map(option => option.label.trim()),
         option_descriptions: draft.options.map(option => option.description.trim()),
         direction: draft.direction.trim(), audio_id: draft.audio.audio_id,
-      });
+      };
+      const fingerprint = JSON.stringify(body);
+      if (!publishAttempt.current || publishAttempt.current.fingerprint !== fingerprint) {
+        let saved: { fingerprint?: string; key?: string } | null = null;
+        try { saved = JSON.parse(sessionStorage.getItem("heardit-publish-attempt-v1") || "null") as { fingerprint?: string; key?: string } | null; } catch {}
+        const key = saved?.fingerprint === fingerprint && typeof saved.key === "string" ? saved.key : crypto.randomUUID();
+        publishAttempt.current = { fingerprint, key };
+        sessionStorage.setItem("heardit-publish-attempt-v1", JSON.stringify(publishAttempt.current));
+      }
+      const result = await hearditApi.publishTest(body, publishAttempt.current.key);
       localStorage.setItem(`heardit-owner-${result.id}`, result.management_token);
       localStorage.setItem(`heardit-owner-id-${result.id}`, "1");
       localStorage.removeItem(DRAFT_KEY);
+      sessionStorage.removeItem("heardit-publish-attempt-v1");
       track("test_published", { test_id: result.id });
       router.push(`/created/${result.id}`);
     } catch (reason) { setError((reason as Error).message); }
@@ -227,23 +220,37 @@ export function CreatorJourney() {
   </div>;
 }
 
-type CreatorData = { id: string; sentence: string; intended_label: string; distractors: string[]; direction: string; model: string; audio_id: string; created_at: string; status: string };
+type CreatorData = components["schemas"]["CreatorTestResponse"];
 
 export function CreatedPage({ id }: { id: string }) {
   const [data, setData] = useState<CreatorData | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [managementToken, setManagementToken] = useState("");
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const url = typeof window === "undefined" ? "" : `${window.location.origin}/t/${id}`;
   useEffect(() => {
     track("share_page_viewed", { test_id: id });
     const token = localStorage.getItem(`heardit-owner-${id}`);
     if (!token) { setError("Creator access is saved on the device that published this test. This browser does not have that private access."); setLoading(false); return; }
-    api<CreatorData>(`/tests/${id}/creator`, undefined, { "X-Management-Token": token }).then(setData).catch(reason => setError((reason as Error).message)).finally(() => setLoading(false));
+    setManagementToken(token);
+    hearditApi.creatorTest(id, token).then(setData).catch(reason => setError((reason as Error).message)).finally(() => setLoading(false));
   }, [id]);
   async function copy() {
     try { await navigator.clipboard.writeText(url); setCopied(true); track("share_clicked", { surface: "created_page", test_id: id }); window.setTimeout(() => setCopied(false), 1800); }
     catch { setError("Clipboard access is unavailable. Copy the test link from the address below."); }
+  }
+  async function copyRecoveryLink() {
+    if (!managementToken || recoveryCopied) return;
+    const privateUrl = `${window.location.origin}/r/${id}#management_token=${encodeURIComponent(managementToken)}`;
+    try {
+      await navigator.clipboard.writeText(privateUrl);
+      setRecoveryCopied(true);
+      track("share_clicked", { surface: "created_page" });
+    } catch {
+      setError("Clipboard access is unavailable. Keep this creator browser available for private results access.");
+    }
   }
   const shareText = encodeURIComponent("Can you hear what this voice really means?");
   const shareUrl = encodeURIComponent(url);
@@ -255,6 +262,7 @@ export function CreatedPage({ id }: { id: string }) {
       <div className="hj-share-card"><span>PUBLIC LISTENING LINK</span><div><code>{url}</code><button type="button" className="hi-button" onClick={() => void copy()}>{copied ? <Check size={16}/> : <Copy size={16}/ >}{copied ? "Copied" : "Copy link"}</button></div></div>
       <div className="hj-social-share"><a href={`https://twitter.com/intent/tweet?text=${shareText}&url=${shareUrl}`} target="_blank" rel="noreferrer">Share on X <ArrowRight size={13}/></a><a href={`https://www.linkedin.com/sharing/share-offsite/?url=${shareUrl}`} target="_blank" rel="noreferrer">LinkedIn <ArrowRight size={13}/></a><a href={`https://wa.me/?text=${shareText}%20${shareUrl}`} target="_blank" rel="noreferrer">WhatsApp <ArrowRight size={13}/></a><a href={`https://www.reddit.com/submit?url=${shareUrl}&title=${shareText}`} target="_blank" rel="noreferrer">Reddit <ArrowRight size={13}/></a>{typeof navigator !== "undefined" && "share" in navigator && <button type="button" onClick={() => void navigator.share({ title: "HeardIt listening test", text: "Can you hear what this voice really means?", url })}><Share2 size={13}/>More options</button>}</div>
       <div className="hj-created-actions"><Link className="hi-button" href={`/r/${id}`}>View results <ArrowRight size={16}/></Link><Link className="hj-secondary-button" href={`/t/${id}`}>Open listening test <ArrowRight size={15}/></Link></div>
+      {managementToken && <div className="hj-recovery-link"><div><b>Save private results access</b><p>This one-time link contains your creator capability in its URL fragment. Anyone with it can view private results.</p></div><button type="button" className="hj-secondary-button" onClick={() => void copyRecoveryLink()} disabled={recoveryCopied}>{recoveryCopied ? <><Check size={14}/>Copied once</> : <><Copy size={14}/>Copy private link</>}</button></div>}
       <p className="hj-private-note"><span><PencilLine size={14}/></span>Your private results access is stored in this browser. Save the results page link on this device; clearing browser data can remove access.</p>
       <p className="hj-created-meta">{data.model} · created {new Date(data.created_at).toLocaleString()}</p>
     </>}

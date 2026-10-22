@@ -15,7 +15,112 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stats/public": {
+      "get": {
+        "summary": "Public Product Stats",
+        "description": "Return only product-wide counts; no test text, labels, or assignments.",
+        "operationId": "public_product_stats_api_v1_stats_public_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicProductStats"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "post": {
+        "summary": "Product Event",
+        "operationId": "product_event_api_v1_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEventResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/stats": {
+      "get": {
+        "summary": "Admin Stats",
+        "operationId": "admin_stats_api_v1_admin_stats_get",
+        "parameters": [
+          {
+            "name": "x-admin-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStatsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -41,7 +146,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Suggestion"
+                }
               }
             }
           },
@@ -77,7 +184,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AudioGenerateResponse"
+                }
               }
             }
           },
@@ -98,22 +207,42 @@
       "post": {
         "summary": "Create Test",
         "operationId": "create_test_api_v1_tests_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateTest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PublishResponse"
+                }
               }
             }
           },
@@ -166,7 +295,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorTestResponse"
+                }
               }
             }
           },
@@ -205,6 +336,22 @@
               "type": "string",
               "title": "Participant Id"
             }
+          },
+          {
+            "name": "x-assignment-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Assignment-Token"
+            }
           }
         ],
         "responses": {
@@ -212,7 +359,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PublicTestResponse"
+                }
               }
             }
           },
@@ -265,9 +414,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Body"
+                "$ref": "#/components/schemas/AssignmentRequest"
               }
             }
           }
@@ -277,7 +424,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentResponse"
+                }
               }
             }
           },
@@ -340,7 +489,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/VoteResponse"
+                }
               }
             }
           },
@@ -393,7 +544,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsResponse"
+                }
               }
             }
           },
@@ -429,10 +582,27 @@
           "200": {
             "description": "Successful Response",
             "content": {
-              "application/json": {
-                "schema": {}
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
               }
             }
+          },
+          "206": {
+            "description": "Partial audio response",
+            "content": {
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "The requested byte range is not satisfiable."
           },
           "422": {
             "description": "Validation Error",
@@ -450,6 +620,142 @@
   },
   "components": {
     "schemas": {
+      "AdminStatsResponse": {
+        "properties": {
+          "tests_created": {
+            "type": "integer",
+            "title": "Tests Created"
+          },
+          "tests_with_response": {
+            "type": "integer",
+            "title": "Tests With Response"
+          },
+          "votes": {
+            "type": "integer",
+            "title": "Votes"
+          },
+          "funnel": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Funnel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tests_created",
+          "tests_with_response",
+          "votes",
+          "funnel"
+        ],
+        "title": "AdminStatsResponse"
+      },
+      "AssignmentRequest": {
+        "properties": {
+          "participant_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 24,
+            "title": "Participant Id"
+          },
+          "captcha_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captcha Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "participant_id"
+        ],
+        "title": "AssignmentRequest"
+      },
+      "AssignmentResponse": {
+        "properties": {
+          "condition": {
+            "type": "string",
+            "enum": [
+              "audio",
+              "text"
+            ],
+            "title": "Condition"
+          },
+          "assignment_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Token"
+          },
+          "creator_preview": {
+            "type": "boolean",
+            "title": "Creator Preview"
+          }
+        },
+        "type": "object",
+        "required": [
+          "condition",
+          "assignment_token",
+          "creator_preview"
+        ],
+        "title": "AssignmentResponse"
+      },
+      "AudioGenerateResponse": {
+        "properties": {
+          "audio_id": {
+            "type": "string",
+            "title": "Audio Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "voice": {
+            "type": "string",
+            "title": "Voice"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio_id",
+          "url",
+          "cached",
+          "model",
+          "direction",
+          "voice",
+          "created_at"
+        ],
+        "title": "AudioGenerateResponse"
+      },
       "CreateTest": {
         "properties": {
           "sentence": {
@@ -504,6 +810,63 @@
         ],
         "title": "CreateTest"
       },
+      "CreatorTestResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "sentence": {
+            "type": "string",
+            "title": "Sentence"
+          },
+          "intended_label": {
+            "type": "string",
+            "title": "Intended Label"
+          },
+          "distractors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Distractors"
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "audio_id": {
+            "type": "string",
+            "title": "Audio Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "status": {
+            "type": "string",
+            "const": "published",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "sentence",
+          "intended_label",
+          "distractors",
+          "direction",
+          "model",
+          "audio_id",
+          "created_at",
+          "status"
+        ],
+        "title": "CreatorTestResponse"
+      },
       "GenerateRequest": {
         "properties": {
           "sentence": {
@@ -540,6 +903,323 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          },
+          "database": {
+            "type": "string",
+            "const": "mongodb",
+            "title": "Database"
+          },
+          "fish_configured": {
+            "type": "boolean",
+            "title": "Fish Configured"
+          },
+          "indexes_ready": {
+            "type": "boolean",
+            "title": "Indexes Ready"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "database",
+          "fish_configured",
+          "indexes_ready"
+        ],
+        "title": "HealthResponse"
+      },
+      "ProductEventRequest": {
+        "properties": {
+          "event": {
+            "type": "string",
+            "enum": [
+              "landing_viewed",
+              "create_started",
+              "ai_suggestion_requested",
+              "audio_generated",
+              "voice_generation_completed",
+              "test_published",
+              "test_opened",
+              "audio_played",
+              "vote_submitted",
+              "results_viewed",
+              "share_clicked",
+              "review_opened",
+              "share_page_viewed",
+              "voice_generation_started",
+              "voice_generation_failed"
+            ],
+            "title": "Event"
+          },
+          "properties": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "type": "object",
+            "maxProperties": 12,
+            "title": "Properties"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "event"
+        ],
+        "title": "ProductEventRequest"
+      },
+      "ProductEventResponse": {
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "const": true,
+            "title": "Accepted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "title": "ProductEventResponse"
+      },
+      "PublicProductStats": {
+        "properties": {
+          "published_tests": {
+            "type": "integer",
+            "title": "Published Tests"
+          },
+          "tests_with_responses": {
+            "type": "integer",
+            "title": "Tests With Responses"
+          },
+          "listener_responses": {
+            "type": "integer",
+            "title": "Listener Responses"
+          }
+        },
+        "type": "object",
+        "required": [
+          "published_tests",
+          "tests_with_responses",
+          "listener_responses"
+        ],
+        "title": "PublicProductStats"
+      },
+      "PublicTestResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/TestOption"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Labels"
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "audio",
+              "text"
+            ],
+            "title": "Condition"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          },
+          "audio_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "options",
+          "labels",
+          "condition"
+        ],
+        "title": "PublicTestResponse"
+      },
+      "PublishResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "management_token": {
+            "type": "string",
+            "title": "Management Token"
+          },
+          "status": {
+            "type": "string",
+            "const": "published",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "management_token",
+          "status"
+        ],
+        "title": "PublishResponse"
+      },
+      "ResultGroup": {
+        "properties": {
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "correct": {
+            "type": "integer",
+            "title": "Correct"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "interval": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval"
+          },
+          "distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Distribution"
+          }
+        },
+        "type": "object",
+        "required": [
+          "n",
+          "correct",
+          "rate",
+          "interval",
+          "distribution"
+        ],
+        "title": "ResultGroup"
+      },
+      "ResultsResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "intended_label": {
+            "type": "string",
+            "title": "Intended Label"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Labels"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "audio": {
+            "$ref": "#/components/schemas/ResultGroup"
+          },
+          "text": {
+            "$ref": "#/components/schemas/ResultGroup"
+          },
+          "voice_lift": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Lift"
+          },
+          "preliminary": {
+            "type": "boolean",
+            "title": "Preliminary"
+          },
+          "interpretation": {
+            "type": "string",
+            "title": "Interpretation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "intended_label",
+          "labels",
+          "total",
+          "audio",
+          "text",
+          "voice_lift",
+          "preliminary",
+          "interpretation"
+        ],
+        "title": "ResultsResponse"
+      },
       "SuggestRequest": {
         "properties": {
           "sentence": {
@@ -567,6 +1247,69 @@
           "sentence"
         ],
         "title": "SuggestRequest"
+      },
+      "Suggestion": {
+        "properties": {
+          "intended_label": {
+            "type": "string",
+            "maxLength": 60,
+            "minLength": 2,
+            "title": "Intended Label"
+          },
+          "alternative_labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Alternative Labels"
+          },
+          "fish_direction": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 2,
+            "title": "Fish Direction"
+          },
+          "explanation": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 2,
+            "title": "Explanation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "intended_label",
+          "alternative_labels",
+          "fish_direction",
+          "explanation"
+        ],
+        "title": "Suggestion"
+      },
+      "TestOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "TestOption"
       },
       "ValidationError": {
         "properties": {
@@ -616,6 +1359,12 @@
             "minLength": 24,
             "title": "Participant Id"
           },
+          "assignment_token": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Assignment Token"
+          },
           "selected_option_id": {
             "anyOf": [
               {
@@ -646,9 +1395,34 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "participant_id"
+          "participant_id",
+          "assignment_token"
         ],
         "title": "VoteRequest"
+      },
+      "VoteResponse": {
+        "properties": {
+          "submitted": {
+            "type": "boolean",
+            "const": true,
+            "title": "Submitted"
+          },
+          "intended_label": {
+            "type": "string",
+            "title": "Intended Label"
+          },
+          "correct": {
+            "type": "boolean",
+            "title": "Correct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "submitted",
+          "intended_label",
+          "correct"
+        ],
+        "title": "VoteResponse"
       }
     }
   }

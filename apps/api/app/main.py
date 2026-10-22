@@ -11,7 +11,8 @@ from pymongo.errors import PyMongoError
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.db import close, require_database
-from app.heardit import initialize_heardit, router as heardit_router
+from app.routers import router as heardit_router
+from app.routers.heardit import ensure_indexes
 
 logger = logging.getLogger("heardit.api")
 settings = get_settings()
@@ -21,9 +22,9 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     try:
-        await initialize_heardit(await require_database())
+        await ensure_indexes(await require_database())
         logger.info("mongodb_ready")
-    except AppError:
+    except (AppError, PyMongoError):
         logger.warning("mongodb_unavailable_at_startup")
     yield
     await close()
@@ -41,7 +42,7 @@ app.add_middleware(
     allow_origins=settings.origins,
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-Management-Token"],
+    allow_headers=["Content-Type", "X-Management-Token", "X-Assignment-Token", "X-Admin-Key", "Idempotency-Key"],
 )
 
 
@@ -56,7 +57,8 @@ async def request_logging(request: Request, call_next):
                 status_code=413,
             )
     response = await call_next(request)
-    response.headers["Cache-Control"] = "no-store"
+    if "immutable" not in response.headers.get("Cache-Control", ""):
+        response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     logger.info(
         "request method=%s path=%s status=%s duration_ms=%d",
