@@ -1,13 +1,19 @@
 <p align="center">
-  <img src="public/heardit-logo.svg" alt="HeardIt" width="190" />
+  <img src="public/heardit-readme-logo.svg" alt="HeardIt" width="220" />
+</p>
+
+<p align="center">
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-App_Router-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js App Router" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-typed-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" /></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-Python-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" /></a>
+  <a href="https://www.mongodb.com/"><img src="https://img.shields.io/badge/MongoDB-persistence-47A248?style=for-the-badge&logo=mongodb&logoColor=white" alt="MongoDB" /></a>
+  <a href="https://fish.audio/"><img src="https://img.shields.io/badge/Fish_Audio-s2.1--pro--free-704BEF?style=for-the-badge" alt="Fish Audio speech synthesis" /></a>
+  <a href="https://aimlapi.com/"><img src="https://img.shields.io/badge/AIML_API-suggestions-5B5BD6?style=for-the-badge" alt="AIML API" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-704BEF?style=for-the-badge" alt="MIT License" /></a>
 </p>
 
 <p align="center">
   <img src="public/banner.png" alt="HeardIt — Same Words. Four Meanings. A listening experiment powered by Fish Audio." width="900" />
-</p>
-
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-704BEF?style=flat-square" alt="MIT License" /></a>
 </p>
 
 <h1 align="center">Same words. Four meanings.</h1>
