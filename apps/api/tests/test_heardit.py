@@ -6,8 +6,8 @@ from pymongo.errors import DuplicateKeyError
 from starlette.requests import Request
 
 from app.core.errors import AppError
-from app.routers.heardit import _cache_key, assignment, public_product_stats, public_test, results, vote
-from app.schemas.heardit import AssignmentRequest, CreateTest, Suggestion, VoteRequest
+from app.routers.heardit import _cache_key, admin_stats, assignment, product_event, public_product_stats, public_test, results, sanitize_event_properties, vote
+from app.schemas.heardit import AssignmentRequest, CreateTest, ProductEventRequest, Suggestion, VoteRequest
 from app.services.statistics import wilson
 
 MANAGEMENT_TOKEN = 'creator-management-token-for-tests'
@@ -64,6 +64,7 @@ class FakeDB:
         self.heardit_votes = FakeCollection(unique=('test_id','anonymous_participant_hash'))
         self.audio_assets = FakeCollection([{'id':'audio-1','model':'s2.1-pro-free','input_text':'[dry] I thought you would be here.'}])
         self.heardit_rate_limits = FakeCollection(unique=('_id',))
+        self.heardit_events = FakeCollection()
 
 
 def request(headers=(), ip='192.0.2.1'):
@@ -205,3 +206,66 @@ async def test_public_product_stats_only_expose_aggregate_counts():
     result = await public_product_stats(db)
     assert result == {'published_tests':1,'tests_with_responses':1,'listener_responses':2}
     assert not {'sentence','intended_label','direction','assigned_condition'} & result.keys()
+
+
+def test_analytics_sanitizer_keeps_only_bounded_product_dimensions():
+    safe = sanitize_event_properties({
+        'surface': 'studio', 'cached': True, 'model': 's2.1-pro-free',
+        'sentence': 'private sentence', 'direction': '[private direction]',
+        'management_token': 'secret-token', 'assignment_token': 'other-secret',
+        'participant_id': 'browser-id', 'selected_label': 'private choice',
+        'url': 'https://example.test/r/id#management_token=secret',
+    })
+    assert safe == {'surface': 'studio', 'cached': True, 'model': 's2.1-pro-free'}
+
+
+@pytest.mark.asyncio
+async def test_product_events_store_sanitized_properties_only():
+    db = FakeDB()
+    result = await product_event(ProductEventRequest(event='test_published', properties={
+        'surface': 'created_page', 'sentence': 'Do not store this', 'direction': '[secret]',
+        'management_token': 'secret', 'test_id': 'private-id',
+    }), request(), db)
+    assert result == {'accepted': True}
+    assert db.heardit_events.rows[0]['event'] == 'test_published'
+    assert db.heardit_events.rows[0]['properties'] == {'surface': 'created_page'}
+    assert 'sentence' not in str(db.heardit_events.rows)
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_are_private_and_funnel_counts_come_from_mongo(monkeypatch):
+    from pydantic import SecretStr
+    from app.routers import heardit as router_module
+
+    db = FakeDB()
+    db.heardit_votes.rows.append({'test_id': 'test-1', 'anonymous_participant_hash': 'p1'})
+    db.heardit_events.rows.extend([
+        {'event': 'create_started'}, {'event': 'create_started'},
+        {'event': 'test_published'}, {'event': 'vote_submitted'},
+    ])
+    test_admin_key = 'admin-test-key-' + ('x' * 40)
+    monkeypatch.setattr(router_module, 'settings', router_module.settings.model_copy(update={'admin_key': SecretStr(test_admin_key)}))
+    with pytest.raises(AppError) as unauthorized:
+        await admin_stats(x_admin_key='wrong', db=db)
+    assert unauthorized.value.status == 404
+    result = await admin_stats(x_admin_key=test_admin_key, db=db)
+    assert result == {
+        'tests_created': 1, 'tests_with_response': 1, 'votes': 1,
+        'funnel': {
+            'create_started': 2, 'voice_generation_completed': 0,
+            'test_published': 1, 'share_clicked': 0,
+            'test_opened': 0, 'vote_submitted': 1,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_are_disabled_when_admin_key_is_unset(monkeypatch):
+    from pydantic import SecretStr
+    from app.routers import heardit as router_module
+
+    monkeypatch.setattr(router_module, 'settings', router_module.settings.model_copy(update={'admin_key': SecretStr('')}))
+    with pytest.raises(AppError) as unavailable:
+        await admin_stats(x_admin_key='anything', db=FakeDB())
+    assert unavailable.value.status == 404
+    assert unavailable.value.code == 'admin_unavailable'

@@ -93,6 +93,12 @@ class Collection:
     async def delete_one(self, query):
         self.rows = [row for row in self.rows if not matches(row, query)]
 
+    async def count_documents(self, query):
+        return sum(matches(row, query) for row in self.rows)
+
+    async def distinct(self, field):
+        return list(dict.fromkeys(row[field] for row in self.rows if field in row))
+
     async def find_one_and_update(self, query, update, **kwargs):
         row = next((row for row in self.rows if matches(row, query)), None)
         if row is None:
@@ -114,7 +120,8 @@ class Database:
         self.heardit_votes = Collection()
         self.heardit_rate_limits = Collection()
         self.audio_assets = Collection()
-        self.events = Collection()
+        self.heardit_events = Collection()
+        self.events = self.heardit_events
 
     async def command(self, _command):
         return {'ok': 1}
@@ -371,6 +378,9 @@ async def test_real_mongo_recovers_after_startup_outage_and_indexes_before_vote(
                 rate_cursor = await db.heardit_rate_limits.list_indexes()
                 rate_indexes = await rate_cursor.to_list(length=None)
                 assert any(index.get('expireAfterSeconds') == 0 for index in rate_indexes)
+                event_cursor = await db.heardit_events.list_indexes()
+                event_indexes = await event_cursor.to_list(length=None)
+                assert any(index.get('expireAfterSeconds') == 15552000 for index in event_indexes)
 
                 vote = await client.post(f'/api/v1/tests/{test_id}/votes', json={
                     'participant_id':participant,
@@ -378,6 +388,12 @@ async def test_real_mongo_recovers_after_startup_outage_and_indexes_before_vote(
                     'selected_label':'Curious',
                 })
                 assert vote.status_code == 201, vote.text
+                duplicate_vote = await client.post(f'/api/v1/tests/{test_id}/votes', json={
+                    'participant_id':participant,
+                    'assignment_token':assignment.json()['assignment_token'],
+                    'selected_label':'Curious',
+                })
+                assert duplicate_vote.status_code == 409, duplicate_vote.text
                 results = await client.get(
                     f'/api/v1/tests/{test_id}/results',
                     headers={'X-Management-Token':CREATOR_TOKEN},
@@ -387,6 +403,22 @@ async def test_real_mongo_recovers_after_startup_outage_and_indexes_before_vote(
                 assert summary['total'] == 1
                 assert summary[assignment.json()['condition']]['distribution']['Curious'] == 1
                 assert summary[assignment.json()['condition']]['interval'] is not None
+
+                admin_key = 'real-mongo-admin-key-' + ('x' * 32)
+                monkeypatch.setattr(heardit, 'settings', heardit.settings.model_copy(update={'admin_key':SecretStr(admin_key)}))
+                event = await client.post('/api/v1/events', json={
+                    'event':'test_opened',
+                    'properties':{'surface':'listener','sentence':'Must not be persisted as an event property.'},
+                })
+                assert event.status_code == 202, event.text
+                admin = await client.get('/api/v1/admin/stats', headers={'X-Admin-Key':admin_key})
+                assert admin.status_code == 200, admin.text
+                assert admin.json()['tests_created'] == 1
+                assert admin.json()['tests_with_response'] == 1
+                assert admin.json()['votes'] == 1
+                assert admin.json()['funnel']['test_opened'] == 1
+                stored_event = await db.heardit_events.find_one({'event':'test_opened'})
+                assert stored_event['properties'] == {'surface':'listener'}
                 health = await client.get('/health')
                 assert health.json()['indexes_ready'] is True
     finally:

@@ -442,6 +442,30 @@ html:has(.hi-landing){scroll-snap-type:y proximity}
 @media(max-width:370px){.hi-studio-section>#sentence,.hi-studio-section>.hi-meaning-grid,.hi-studio-section>.hi-direction-input,.hi-studio-section>.hi-examples,.hi-studio-section>.hi-generate,.hi-studio-section>.hi-generation-note,.hi-studio-publish,.hi-studio-form>.hi-published{width:calc(100% - 34px);margin-left:34px}.hi-studio-section>.hi-generation-note{width:calc(100% - 34px)}}
 @media(prefers-reduced-motion:reduce){.hi-emotion-card{animation:none}.hi-demo-reveal{animation:none}}
 
+.hi-admin{min-height:100svh;display:grid;place-items:center;padding:32px 18px;background:radial-gradient(circle at 15% 10%,#f3eeff,transparent 38%),#fcfbfe;color:#17141d}
+.hi-admin-card{width:min(100%,760px);padding:clamp(24px,5vw,48px);border:1px solid #eae6f1;border-radius:22px;background:#fff;box-shadow:0 24px 70px #24134d12}
+.hi-admin-card h1{margin:10px 0;font-size:clamp(30px,5vw,46px);letter-spacing:-.045em}
+.hi-admin-card>p{color:#827d90;line-height:1.65}
+.hi-admin-card form{display:grid;gap:12px;max-width:420px;margin-top:26px}
+.hi-admin-card form label{font-weight:650;font-size:14px}
+.hi-admin-card form input{height:48px;border:1px solid #e3deed;border-radius:11px;padding:0 13px;background:#fff;color:#17141d;font:inherit}
+.hi-admin-card form input:focus-visible{outline:3px solid #704bef44;border-color:#704bef}
+.hi-admin-card form .hi-button{min-height:48px;border:0;cursor:pointer}
+.hi-admin-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:28px 0 34px}
+.hi-admin-metrics article{display:grid;gap:8px;padding:18px;border:1px solid #eae6f1;border-radius:14px;background:#faf8ff}
+.hi-admin-metrics article span{color:#827d90;font-size:13px}
+.hi-admin-metrics article b{font-size:30px;letter-spacing:-.04em}
+.hi-admin-card h2{font-size:19px;margin:0 0 12px}
+.hi-admin-funnel{list-style:none;margin:0;padding:0;border-top:1px solid #eeeaf4}
+.hi-admin-funnel li{display:flex;justify-content:space-between;gap:20px;padding:13px 2px;border-bottom:1px solid #eeeaf4}
+.hi-admin-funnel li span{color:#514b60}
+.hi-admin-funnel li b{color:#704bef;font-variant-numeric:tabular-nums}
+.hj-recovery-link{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:14px;padding:18px;border:1px solid #e6defb;border-radius:14px;background:#faf8ff}
+.hj-recovery-link b{font-size:14px}
+.hj-recovery-link p{margin:5px 0 0;color:#827d90;font-size:12px;line-height:1.5;max-width:560px}
+.hj-recovery-link button{flex-shrink:0}
+@media(max-width:600px){.hi-admin-metrics{grid-template-columns:1fr}.hi-admin-metrics article{grid-template-columns:1fr auto;align-items:center}.hi-admin-metrics article b{font-size:25px}.hj-recovery-link{align-items:stretch;flex-direction:column}.hj-recovery-link button{justify-content:center}}
+
 /* HeardIt creator journey */
 .hj-shell{min-height:100vh;background:#fcfbfe;color:#17141d}
 .hj-main{width:min(1200px,calc(100% - 48px));margin:0 auto;padding:34px 0 76px}

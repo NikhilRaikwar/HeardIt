@@ -43,6 +43,90 @@
         }
       }
     },
+    "/api/v1/events": {
+      "post": {
+        "summary": "Product Event",
+        "operationId": "product_event_api_v1_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEventResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/stats": {
+      "get": {
+        "summary": "Admin Stats",
+        "operationId": "admin_stats_api_v1_admin_stats_get",
+        "parameters": [
+          {
+            "name": "x-admin-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStatsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/suggestions": {
       "post": {
         "summary": "Suggestions",
@@ -536,6 +620,37 @@
   },
   "components": {
     "schemas": {
+      "AdminStatsResponse": {
+        "properties": {
+          "tests_created": {
+            "type": "integer",
+            "title": "Tests Created"
+          },
+          "tests_with_response": {
+            "type": "integer",
+            "title": "Tests With Response"
+          },
+          "votes": {
+            "type": "integer",
+            "title": "Votes"
+          },
+          "funnel": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Funnel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tests_created",
+          "tests_with_response",
+          "votes",
+          "funnel"
+        ],
+        "title": "AdminStatsResponse"
+      },
       "AssignmentRequest": {
         "properties": {
           "participant_id": {
@@ -817,6 +932,72 @@
           "indexes_ready"
         ],
         "title": "HealthResponse"
+      },
+      "ProductEventRequest": {
+        "properties": {
+          "event": {
+            "type": "string",
+            "enum": [
+              "landing_viewed",
+              "create_started",
+              "ai_suggestion_requested",
+              "audio_generated",
+              "voice_generation_completed",
+              "test_published",
+              "test_opened",
+              "audio_played",
+              "vote_submitted",
+              "results_viewed",
+              "share_clicked",
+              "review_opened",
+              "share_page_viewed",
+              "voice_generation_started",
+              "voice_generation_failed"
+            ],
+            "title": "Event"
+          },
+          "properties": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "type": "object",
+            "maxProperties": 12,
+            "title": "Properties"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "event"
+        ],
+        "title": "ProductEventRequest"
+      },
+      "ProductEventResponse": {
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "const": true,
+            "title": "Accepted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "title": "ProductEventResponse"
       },
       "PublicProductStats": {
         "properties": {

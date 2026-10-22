@@ -1,0 +1,52 @@
+name: HeardIt CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, engineering-readiness]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      HEARDIT_MONGO_TEST_URI: mongodb://127.0.0.1:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+      - run: npm ci
+      - run: uv sync --directory apps/api --locked
+      - name: Run backend tests with real MongoDB integration enabled
+        run: npm run api:test
+      - name: Generate the OpenAPI client
+        run: npm run api:types
+      - name: Fail on OpenAPI schema drift
+        run: git diff --exit-code -- apps/api/openapi.json src/lib/api-schema.ts
+      - run: npm run test:analytics
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Build Next.js production output
+        run: npm run build
+        env:
+          API_INTERNAL_URL: https://127.0.0.1:8999
+          NEXT_PUBLIC_APP_URL: https://heardit.invalid
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run responsive browser journey tests
+        run: npm run test:e2e

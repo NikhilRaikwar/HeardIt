@@ -89,6 +89,28 @@ class PublicProductStats(BaseModel):
     listener_responses: int
 
 
+class ProductEventRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    event: Literal[
+        'landing_viewed', 'create_started', 'ai_suggestion_requested', 'audio_generated',
+        'voice_generation_completed', 'test_published', 'test_opened', 'audio_played',
+        'vote_submitted', 'results_viewed', 'share_clicked', 'review_opened',
+        'share_page_viewed', 'voice_generation_started', 'voice_generation_failed',
+    ]
+    properties: dict[str, str | bool | int | float] = Field(default_factory=dict, max_length=12)
+
+
+class ProductEventResponse(BaseModel):
+    accepted: Literal[True]
+
+
+class AdminStatsResponse(BaseModel):
+    tests_created: int
+    tests_with_response: int
+    votes: int
+    funnel: dict[str, int]
+
+
 class AudioGenerateResponse(BaseModel):
     audio_id: str
     url: str

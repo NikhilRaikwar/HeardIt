@@ -5,6 +5,8 @@ test("landing presents the HeardIt experiment and create CTA", async ({ page }) 
   await expect(page.getByRole("heading", { name: /Same Words.*Four Meanings/ })).toBeVisible();
   await expect(page.getByText("Can you hear what an AI voice really means?")).toBeVisible();
   await expect(page.getByRole("link", { name: "Create a listening test" }).first()).toHaveAttribute("href", "/create");
+  await expect(page.getByText("0 of 4 Fish Audio samples ready")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Curious", exact: true })).toBeDisabled();
   if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-landing-desktop.png", fullPage: true });
   if (page.viewportSize()?.width === 375) await page.screenshot({ path: "test-results/heardit-landing-mobile.png", fullPage: true });
 });
@@ -112,6 +114,58 @@ test("creator generates, reviews, and publishes a test through the staged journe
   await expect(page.getByRole("heading", { name: "Your test is live." })).toBeVisible();
   if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-share-desktop.png", fullPage: true });
   await expect(page.getByRole("link", { name: /Open listening test/ })).toHaveAttribute("href", "/t/published-test");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const privateLinkButton = page.getByRole("button", { name: "Copy private link" });
+  await privateLinkButton.click();
+  const privateLink = await page.evaluate(() => navigator.clipboard.readText());
+  expect(new URL(privateLink).search).toBe("");
+  expect(new URL(privateLink).hash).toContain("management_token=private-token");
+  await expect(page.getByRole("button", { name: "Copied once" })).toBeDisabled();
+});
+
+test("private results links consume their fragment and do not retain the capability in the URL", async ({ page }) => {
+  await page.route("**/api/v1/tests/fragment-results/results", route => {
+    expect(route.request().headers()["x-management-token"]).toBe("fragment-capability");
+    return route.fulfill({ json: { id: "fragment-results", intended_label: "Curious", labels: ["Curious", "Annoyed", "Hurt", "Playful"], total: 0, audio: { n: 0, correct: 0, rate: null, interval: null, distribution: { Curious: 0, Annoyed: 0, Hurt: 0, Playful: 0 } }, text: { n: 0, correct: 0, rate: null, interval: null, distribution: { Curious: 0, Annoyed: 0, Hurt: 0, Playful: 0 } }, voice_lift: null, preliminary: true, interpretation: "Insufficient data." } });
+  });
+  await page.goto("/r/fragment-results#management_token=fragment-capability");
+  await expect(page.getByRole("heading", { name: "What people heard." })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.location.hash)).toBe("");
+  await expect(page.getByText("Results are private to the creator.")).toHaveCount(0);
+});
+
+test("product funnel events sent to FastAPI contain only safe allowlisted properties", async ({ page }) => {
+  const received: { event: string; properties: Record<string, unknown> }[] = [];
+  await page.route("**/api/v1/events", async route => {
+    received.push(route.request().postDataJSON());
+    await route.fulfill({ status: 202, json: { accepted: true } });
+  });
+  await page.goto("/");
+  await expect.poll(() => received.some(value => value.event === "landing_viewed")).toBe(true);
+  for (const value of received) {
+    expect(Object.keys(value.properties)).not.toContain("sentence");
+    expect(Object.keys(value.properties)).not.toContain("direction");
+    expect(Object.keys(value.properties)).not.toContain("management_token");
+    expect(Object.keys(value.properties)).not.toContain("assignment_token");
+    expect(Object.keys(value.properties)).not.toContain("participant_id");
+  }
+});
+
+test("admin metrics require a private key and establish an HTTP-only expiring session", async ({ page, context }) => {
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "HeardIt metrics" })).toBeVisible();
+  await page.getByLabel("Admin key").fill("incorrect-key");
+  await page.getByRole("button", { name: "Open metrics" }).click();
+  await expect(page.getByLabel("Admin key")).toBeVisible();
+  expect(await context.cookies()).toEqual([]);
+
+  await page.getByLabel("Admin key").fill("e2e-only-test-key-0123456789abcdef0123456789abcdef");
+  await page.getByRole("button", { name: "Open metrics" }).click();
+  await expect(page.getByText(/Counts come from MongoDB/)).toBeVisible();
+  const session = (await context.cookies()).find(cookie => cookie.name === "heardit-admin-session");
+  expect(session?.httpOnly).toBe(true);
+  expect(session?.sameSite).toBe("Strict");
+  expect(session?.expires).toBeGreaterThan(Date.now() / 1000);
 });
 
 test("creator opens a labelled read-only preview without entering the listener experiment", async ({ page }) => {

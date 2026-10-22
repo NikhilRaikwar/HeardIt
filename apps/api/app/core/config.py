@@ -36,12 +36,16 @@ class Settings(BaseSettings):
     votes_per_test_daily_cap: int = Field(10000, ge=1, alias='HEARDIT_VOTES_PER_TEST_DAILY_CAP')
     captcha_enabled: bool = Field(False, alias='HEARDIT_CAPTCHA_ENABLED')
     turnstile_secret: SecretStr = Field(SecretStr(''), alias='HEARDIT_TURNSTILE_SECRET')
+    admin_key: SecretStr = Field(SecretStr(''), alias='ADMIN_KEY')
 
     @model_validator(mode='after')
     def require_production_signing_secret(self):
         value = self.signing_secret.get_secret_value()
         if self.environment == 'production' and len(value) < 32:
             raise ValueError('HEARDIT_SIGNING_SECRET must contain at least 32 characters in production.')
+        admin_key = self.admin_key.get_secret_value()
+        if admin_key and len(admin_key) < 32:
+            raise ValueError('ADMIN_KEY must contain at least 32 characters when configured.')
         if not value:
             # Local development only: tokens intentionally expire across API restarts.
             self.signing_secret = SecretStr(secrets.token_urlsafe(48))

@@ -10,6 +10,7 @@
     "api:openapi": "uv run --directory apps/api python export_openapi.py",
     "api:test": "uv run --directory apps/api pytest",
     "api:types": "npm run api:openapi && openapi-typescript apps/api/openapi.json --output src/lib/api-schema.ts",
+    "test:analytics": "node --test src/lib/analytics-properties.test.mjs",
     "test:e2e": "playwright test",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
@@ -24,6 +25,7 @@
     "next": "^15.1.6",
     "next-themes": "^0.4.6",
     "openapi-fetch": "^0.17.0",
+    "posthog-js": "^1.438.17",
     "radix-ui": "^1.8.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

@@ -226,17 +226,31 @@ export function CreatedPage({ id }: { id: string }) {
   const [data, setData] = useState<CreatorData | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [managementToken, setManagementToken] = useState("");
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const url = typeof window === "undefined" ? "" : `${window.location.origin}/t/${id}`;
   useEffect(() => {
     track("share_page_viewed", { test_id: id });
     const token = localStorage.getItem(`heardit-owner-${id}`);
     if (!token) { setError("Creator access is saved on the device that published this test. This browser does not have that private access."); setLoading(false); return; }
+    setManagementToken(token);
     hearditApi.creatorTest(id, token).then(setData).catch(reason => setError((reason as Error).message)).finally(() => setLoading(false));
   }, [id]);
   async function copy() {
     try { await navigator.clipboard.writeText(url); setCopied(true); track("share_clicked", { surface: "created_page", test_id: id }); window.setTimeout(() => setCopied(false), 1800); }
     catch { setError("Clipboard access is unavailable. Copy the test link from the address below."); }
+  }
+  async function copyRecoveryLink() {
+    if (!managementToken || recoveryCopied) return;
+    const privateUrl = `${window.location.origin}/r/${id}#management_token=${encodeURIComponent(managementToken)}`;
+    try {
+      await navigator.clipboard.writeText(privateUrl);
+      setRecoveryCopied(true);
+      track("share_clicked", { surface: "created_page" });
+    } catch {
+      setError("Clipboard access is unavailable. Keep this creator browser available for private results access.");
+    }
   }
   const shareText = encodeURIComponent("Can you hear what this voice really means?");
   const shareUrl = encodeURIComponent(url);
@@ -248,6 +262,7 @@ export function CreatedPage({ id }: { id: string }) {
       <div className="hj-share-card"><span>PUBLIC LISTENING LINK</span><div><code>{url}</code><button type="button" className="hi-button" onClick={() => void copy()}>{copied ? <Check size={16}/> : <Copy size={16}/ >}{copied ? "Copied" : "Copy link"}</button></div></div>
       <div className="hj-social-share"><a href={`https://twitter.com/intent/tweet?text=${shareText}&url=${shareUrl}`} target="_blank" rel="noreferrer">Share on X <ArrowRight size={13}/></a><a href={`https://www.linkedin.com/sharing/share-offsite/?url=${shareUrl}`} target="_blank" rel="noreferrer">LinkedIn <ArrowRight size={13}/></a><a href={`https://wa.me/?text=${shareText}%20${shareUrl}`} target="_blank" rel="noreferrer">WhatsApp <ArrowRight size={13}/></a><a href={`https://www.reddit.com/submit?url=${shareUrl}&title=${shareText}`} target="_blank" rel="noreferrer">Reddit <ArrowRight size={13}/></a>{typeof navigator !== "undefined" && "share" in navigator && <button type="button" onClick={() => void navigator.share({ title: "HeardIt listening test", text: "Can you hear what this voice really means?", url })}><Share2 size={13}/>More options</button>}</div>
       <div className="hj-created-actions"><Link className="hi-button" href={`/r/${id}`}>View results <ArrowRight size={16}/></Link><Link className="hj-secondary-button" href={`/t/${id}`}>Open listening test <ArrowRight size={15}/></Link></div>
+      {managementToken && <div className="hj-recovery-link"><div><b>Save private results access</b><p>This one-time link contains your creator capability in its URL fragment. Anyone with it can view private results.</p></div><button type="button" className="hj-secondary-button" onClick={() => void copyRecoveryLink()} disabled={recoveryCopied}>{recoveryCopied ? <><Check size={14}/>Copied once</> : <><Copy size={14}/>Copy private link</>}</button></div>}
       <p className="hj-private-note"><span><PencilLine size={14}/></span>Your private results access is stored in this browser. Save the results page link on this device; clearing browser data can remove access.</p>
       <p className="hj-created-meta">{data.model} · created {new Date(data.created_at).toLocaleString()}</p>
     </>}

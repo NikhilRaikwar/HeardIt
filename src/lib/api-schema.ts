@@ -41,6 +41,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Product Event */
+        post: operations["product_event_api_v1_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Stats */
+        get: operations["admin_stats_api_v1_admin_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/suggestions": {
         parameters: {
             query?: never;
@@ -198,6 +232,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdminStatsResponse */
+        AdminStatsResponse: {
+            /** Tests Created */
+            tests_created: number;
+            /** Tests With Response */
+            tests_with_response: number;
+            /** Votes */
+            votes: number;
+            /** Funnel */
+            funnel: {
+                [key: string]: number;
+            };
+        };
         /** AssignmentRequest */
         AssignmentRequest: {
             /** Participant Id */
@@ -301,6 +348,26 @@ export interface components {
             fish_configured: boolean;
             /** Indexes Ready */
             indexes_ready: boolean;
+        };
+        /** ProductEventRequest */
+        ProductEventRequest: {
+            /**
+             * Event
+             * @enum {string}
+             */
+            event: "landing_viewed" | "create_started" | "ai_suggestion_requested" | "audio_generated" | "voice_generation_completed" | "test_published" | "test_opened" | "audio_played" | "vote_submitted" | "results_viewed" | "share_clicked" | "review_opened" | "share_page_viewed" | "voice_generation_started" | "voice_generation_failed";
+            /** Properties */
+            properties?: {
+                [key: string]: string | boolean | number;
+            };
+        };
+        /** ProductEventResponse */
+        ProductEventResponse: {
+            /**
+             * Accepted
+             * @constant
+             */
+            accepted: true;
         };
         /** PublicProductStats */
         PublicProductStats: {
@@ -486,6 +553,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicProductStats"];
+                };
+            };
+        };
+    };
+    product_event_api_v1_events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductEventRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductEventResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_stats_api_v1_admin_stats_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-admin-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStatsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

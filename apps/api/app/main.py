@@ -42,7 +42,7 @@ app.add_middleware(
     allow_origins=settings.origins,
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-Management-Token", "X-Assignment-Token", "Idempotency-Key"],
+    allow_headers=["Content-Type", "X-Management-Token", "X-Assignment-Token", "X-Admin-Key", "Idempotency-Key"],
 )
 
 

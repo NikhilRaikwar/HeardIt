@@ -69,6 +69,25 @@ Executed on 2026-10-23 (Asia/Calcutta), after moving API routes under `apps/api/
 
 The landing page reads only product-wide Mongo counts and does not include individual sentences, labels, or assignments. The schema-drift workflow was added but has not run on GitHub. No real Fish Audio or AIML request was made.
 
+## Phase 4 — analytics, private metrics, recovery, demo assets, and CI
+
+Executed on 2026-10-23 (Asia/Calcutta). Added PostHog SDK capture with browser/server property allowlists, MongoDB-retained funnel events, a key-protected server-rendered `/admin`, fragment-only creator recovery links, a Fish-backed demo seeder and manifest verification, plus the full CI workflow.
+
+| Command | Observed result |
+| --- | --- |
+| `npm run api:types` | Exit 0. OpenAPI exported and TypeScript client regenerated. `git diff --check` reported only Git's CRLF-to-LF working-copy notices. |
+| `HEARDIT_MONGO_TEST_URI=mongodb://127.0.0.1:27017 npm run api:test` | **60 passed in 2.87s**. Includes real local Mongo indexes, duplicate-vote rejection, the 180-day event TTL index, a saved event and Mongo-backed admin funnel counts. |
+| `npm run test:analytics` | **1 passed**. The sanitizer test supplies sentence, direction, answer, participant and capability values and confirms only the allowed product dimensions remain. |
+| `npm run typecheck` | Exit 0. |
+| `npm run lint` | Exit 0. |
+| `API_INTERNAL_URL=https://127.0.0.1:8999 NEXT_PUBLIC_APP_URL=https://heardit.invalid npm run build` | Exit 0 on Next.js 15.5.28. `/admin` is dynamic; `/` is static with five-minute revalidation. Next.js reported that an Edge-runtime page cannot be statically generated. The placeholder API URL avoided querying the live deployment. |
+| `PLAYWRIGHT_PORT=3120 npx playwright test` | **33 passed in 1.3m** across desktop, tablet, and mobile. Covers safe analytics payloads, creator recovery links, fragment removal, demo-unavailable state, and the admin session cookie. API responses are mocked/intercepted; this is not live provider or full Mongo browser testing. |
+| Focused desktop admin Playwright test | **1 passed in 20.2s** while diagnosing the same-origin form submission. The full matrix subsequently passed. |
+| `npm audit --omit=dev` | Exit 0: **0 production dependency vulnerabilities**. |
+| `npm audit` | Exit 1: **5 high-severity development dependency findings** in the `eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces` chain. npm reports no patched `braces` release and recommends a breaking ESLint-config downgrade. No forced downgrade was applied. |
+
+The live Fish demo seed script was not run: it would call the configured Fish Audio service and consume the account's synthesis allowance. The sample manifest is therefore absent, and the landing page correctly reports that no clips are ready. No genuine Fish Audio or AIML request, PostHog capture, live deployment, or GitHub Actions run occurred. The `ci.yml` workflow was added but only its constituent local commands above were run.
+
 ## Remaining verification
 
-Phases 4–5, real provider calls on this branch, live deployment, and execution of the GitHub Actions workflow have not run. Baseline live URLs above are configuration inputs, not a claim that this branch is deployed.
+Phase 5 smoke tooling and run evidence remain. Real provider calls, live deployment, and execution of the GitHub Actions workflow have not run. Baseline live URLs above are configuration inputs, not a claim that this branch is deployed.

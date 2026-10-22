@@ -55,7 +55,9 @@ flowchart LR
   API --> DB[(MongoDB<br/>Tests · Assignments · Votes · GridFS audio)]
   Web -->|Blind test and vote| API
   API -->|Counts and Wilson intervals| Web
-  Web -. optional product events .-> PH[PostHog]
+  Web -->|Allowlisted product funnel events| API
+  Web -. PostHog SDK when configured .-> PH[PostHog]
+  API -->|Sanitized events and aggregates| DB
 
   classDef app fill:#eee8ff,stroke:#704bef,color:#261653,stroke-width:2px
   classDef service fill:#eef6ff,stroke:#6b91d5,color:#173452,stroke-width:1.5px
@@ -67,7 +69,7 @@ flowchart LR
   class AIML,Fish,PH provider
 ```
 
-The Next.js app proxies API requests to FastAPI. Provider credentials stay on the server. MongoDB stores tests, stable participant assignments, deduplicated votes, and generated audio in GridFS. The frontend API client is typed from FastAPI's OpenAPI schema. Vercel Web Analytics records site page views when enabled for the Vercel project; optional PostHog handles HeardIt's product funnel events.
+The Next.js app proxies API requests to FastAPI. Provider credentials stay on the server. MongoDB stores tests, stable participant assignments, deduplicated votes, generated audio in GridFS, and a limited set of sanitized product events. The frontend API client is typed from FastAPI's OpenAPI schema. Vercel Web Analytics records site page views when enabled for the Vercel project. When configured, the PostHog SDK receives the same allowlisted product events; automatic capture and session recording are disabled.
 
 ## Product safeguards
 
@@ -81,6 +83,9 @@ The Next.js app proxies API requests to FastAPI. Provider credentials stay on th
 - Results are calculated in Python. Empty groups show insufficient data, and results under 20 total responses are marked preliminary.
 - Positive voice lift is presented as a sample difference, not proof of statistical significance or general model quality.
 - Fish audio is cached by synthesis inputs. The landing demo stays in setup state until a genuine sample MP3 is configured.
+- Product events exclude sentence text, voice directions, selected labels, participant IDs, management tokens, and assignment tokens. MongoDB retains events for up to 180 days; PostHog is optional and its project retention follows the configured account.
+- The private `/admin` metrics page is unavailable unless `ADMIN_KEY` is set on both Next.js and FastAPI. Access uses an HTTP-only, one-hour signed session cookie; the backend also verifies the key on each private metrics request.
+- After publishing, the creator can copy a private results recovery link once. Its management capability is in the URL fragment, which is not sent in the HTTP request; opening the link stores the capability in that browser and removes the fragment before analytics or API calls.
 
 ## Run locally
 
@@ -120,15 +125,30 @@ The FastAPI server reads private provider and database credentials. Never use `N
 | `FISH_TTS_MODEL` | FastAPI | `s2.1-pro-free`. |
 | `AIML_API_KEY` | FastAPI | Optional interpretation suggestions. |
 | `AIML_MODEL` | FastAPI | AIML model available to your account. |
+| `ADMIN_KEY` | Next.js and FastAPI | Optional matching random key of at least 32 characters for the private admin page and metrics endpoint. Leave unset to disable `/admin`. |
 | `HEARDIT_ALLOWED_ORIGINS` | FastAPI | Comma-separated allowed frontend origins. |
 | `API_INTERNAL_URL` | Next.js server | FastAPI base URL; local default is `http://127.0.0.1:8000`. |
 | `NEXT_PUBLIC_APP_URL` | Next.js | Public site origin used for canonical metadata and share links. |
-| `NEXT_PUBLIC_HEARDIT_DEMO_AUDIO_URL` | Browser | Optional URL to a genuine demo MP3. |
-| `NEXT_PUBLIC_HEARDIT_DEMO_INTENDED_LABEL` | Browser | Intended label for the configured demo clip. |
 | `NEXT_PUBLIC_POSTHOG_KEY` | Browser | Optional PostHog project key. |
 | `NEXT_PUBLIC_POSTHOG_HOST` | Browser | Optional PostHog host. |
 
-The demo audio URL and its intended label must be configured together. See `.env.example` for a complete template.
+See `.env.example` for a complete template. `ADMIN_KEY` must be the same value on the frontend and backend, and should be generated as a random value with at least 32 characters.
+
+### Prepare the landing demo clips
+
+The repository does not include fabricated or placeholder audio. With the FastAPI service running and configured with a real Fish Audio key, generate the four cached examples and write their asset IDs to `public/demo-audio.json`:
+
+```powershell
+uv run --directory apps/api python ../../scripts/seed-demo.py
+```
+
+The landing page checks that the manifest contains all four expected labels and verifies each MP3 with a one-byte range request before showing the interactive demo. If any clip is missing, the demo stays clearly marked as unavailable.
+
+### Private product metrics
+
+Set the same `ADMIN_KEY` in the Vercel frontend project and the FastAPI deployment. Visit `/admin`, enter the key once, and the page reads test, response, vote, and funnel counts from MongoDB. It does not use PostHog as its source of truth. With the key unset, `/admin` returns a not-found page.
+
+The tracked funnel is `create_started → voice_generation_completed → test_published → share_clicked → test_opened → vote_submitted`. Product events are filtered in the browser and again in FastAPI; neither store receives sentence text, voice directions, tokens, participant identifiers, or answer labels.
 
 Vercel Analytics does not need an environment variable. Enable **Analytics** in the Vercel project's dashboard and redeploy to start collecting page views.
 
@@ -142,6 +162,8 @@ FastAPI exposes `/health` and these `/api/v1` operations:
 - `POST /tests/{id}/assignment`, `POST /tests/{id}/votes` — assign conditions and persist responses.
 - `GET /tests/{id}/results` — return creator-authorized experiment statistics.
 - `GET /stats/public` — return product-wide counts without test content or labels.
+- `POST /events` — store allowlisted funnel events with only bounded, non-content properties.
+- `GET /admin/stats` — return MongoDB-backed metrics; requires `X-Admin-Key` and is disabled unless `ADMIN_KEY` is configured.
 
 Creator-only endpoints require the management capability. TypeScript API definitions are generated from `apps/api/openapi.json` into `src/lib/api-schema.ts`:
 
@@ -153,6 +175,7 @@ npm run api:types
 
 ```powershell
 npm run api:test
+npm run test:analytics
 npm run api:types
 npm run typecheck
 npm run lint

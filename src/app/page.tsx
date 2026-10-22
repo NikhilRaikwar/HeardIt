@@ -1,4 +1,5 @@
 import { Landing } from "@/components/heardit";
+import { loadDemoSamples } from "@/lib/demo-audio";
 import type { components } from "@/lib/api-schema";
 
 type PublicStats = components["schemas"]["PublicProductStats"];
@@ -92,9 +93,9 @@ const structuredData = [
 ];
 
 export default async function Page() {
-  const publicStats = await getPublicStats();
+  const [publicStats, demoSamples] = await Promise.all([getPublicStats(), loadDemoSamples()]);
   return <>
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />
-    <Landing publicStats={publicStats} />
+    <Landing publicStats={publicStats} demoSamples={demoSamples} />
   </>;
 }

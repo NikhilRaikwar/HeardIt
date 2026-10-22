@@ -32,6 +32,9 @@ from app.schemas.heardit import (
     HealthResponse,
     PublicTestResponse,
     PublicProductStats,
+    ProductEventRequest,
+    ProductEventResponse,
+    AdminStatsResponse,
     PublishResponse,
     ResultsResponse,
     SuggestRequest,
@@ -43,6 +46,10 @@ from app.schemas.heardit import (
 router = APIRouter()
 settings = get_settings()
 now = lambda: datetime.now(timezone.utc).isoformat()
+FUNNEL_EVENTS = ('create_started', 'voice_generation_completed', 'test_published', 'share_clicked', 'test_opened', 'vote_submitted')
+EVENT_SURFACES = {'landing', 'hero', 'navigation', 'footer', 'create', 'studio', 'creator_journey', 'creator_preview', 'interpretations', 'direction', 'created_page', 'listener', 'results', 'demo', 'demo_setup', 'landing_demo', 'hero_sample'}
+EVENT_EMOTIONS = {'curious', 'annoyed', 'hurt', 'playful'}
+EVENT_CHANNELS = {'x', 'linkedin', 'whatsapp', 'reddit', 'native', 'link'}
 _indexes_ready = False
 _indexes_lock = asyncio.Lock()
 
@@ -159,6 +166,59 @@ async def public_product_stats(db=Depends(require_database)):
         'published_tests': published_tests,
         'tests_with_responses': len(responded_test_ids),
         'listener_responses': listener_responses,
+    }
+
+
+def sanitize_event_properties(properties: dict[str, object]) -> dict[str, str | bool | int | float]:
+    """Allow a small set of bounded, non-content event dimensions only."""
+    safe: dict[str, str | bool | int | float] = {}
+    surface = properties.get('surface')
+    if isinstance(surface, str) and surface in EVENT_SURFACES:
+        safe['surface'] = surface
+    emotion = properties.get('emotion')
+    if isinstance(emotion, str) and emotion.casefold() in EVENT_EMOTIONS:
+        safe['emotion'] = emotion.casefold()
+    channel = properties.get('channel')
+    if isinstance(channel, str) and channel.casefold() in EVENT_CHANNELS:
+        safe['channel'] = channel.casefold()
+    condition = properties.get('condition')
+    if isinstance(condition, str) and condition in {'audio', 'text'}:
+        safe['condition'] = condition
+    cached = properties.get('cached')
+    if isinstance(cached, bool):
+        safe['cached'] = cached
+    model = properties.get('model')
+    if isinstance(model, str) and model == 's2.1-pro-free':
+        safe['model'] = model
+    return safe
+
+
+@router.post('/api/v1/events', response_model=ProductEventResponse, status_code=202)
+async def product_event(body: ProductEventRequest, request: Request, db=Depends(require_indexed_database)):
+    await _rate_limit(db, 'event:' + _ip_hash(request), 120, 60)
+    await db.heardit_events.insert_one({
+        'event': body.event,
+        'properties': sanitize_event_properties(body.properties),
+        'created_at': datetime.now(timezone.utc),
+    })
+    return {'accepted': True}
+
+
+@router.get('/api/v1/admin/stats', response_model=AdminStatsResponse)
+async def admin_stats(x_admin_key: str | None = Header(default=None), db=Depends(require_database)):
+    expected = settings.admin_key.get_secret_value()
+    if not expected:
+        raise AppError(404, 'admin_unavailable', 'This page is not available.')
+    if not x_admin_key or not secrets.compare_digest(x_admin_key, expected):
+        raise AppError(404, 'admin_unavailable', 'This page is not available.')
+    votes = await db.heardit_votes.count_documents({})
+    responded_tests = await db.heardit_votes.distinct('test_id')
+    funnel = {event: await db.heardit_events.count_documents({'event': event}) for event in FUNNEL_EVENTS}
+    return {
+        'tests_created': await db.heardit_tests.count_documents({}),
+        'tests_with_response': len(responded_tests),
+        'votes': votes,
+        'funnel': funnel,
     }
 
 @router.post('/api/v1/suggestions', response_model=Suggestion)
@@ -476,3 +536,5 @@ async def initialize_heardit(db):
     await db.heardit_assignments.create_index([('test_id',ASCENDING),('participant_hash',ASCENDING)],unique=True)
     await db.heardit_votes.create_index([('test_id',ASCENDING),('anonymous_participant_hash',ASCENDING)],unique=True)
     await db.heardit_rate_limits.create_index('expires_at',expireAfterSeconds=0)
+    await db.heardit_events.create_index([('event',ASCENDING),('created_at',-1)])
+    await db.heardit_events.create_index('created_at',expireAfterSeconds=15552000)
