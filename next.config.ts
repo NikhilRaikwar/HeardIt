@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const configuredApiOrigin = process.env.API_INTERNAL_URL?.trim();
 
 if (process.env.NODE_ENV === "production" && !configuredApiOrigin) {
-  throw new Error("API_INTERNAL_URL must point to the HTTPS FastAPI deployment when building HeardIt for production.");
+  throw new Error("Missing API_INTERNAL_URL. In Vercel, add the HTTPS base URL of your deployed FastAPI service in Project Settings → Environment Variables, then redeploy. Do not include /api/v1.");
 }
 
 const apiOrigin = configuredApiOrigin || "http://127.0.0.1:8000";

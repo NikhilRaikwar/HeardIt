@@ -9,6 +9,7 @@
   <a href="https://www.mongodb.com/"><img src="https://img.shields.io/badge/MongoDB-persistence-47A248?style=for-the-badge&logo=mongodb&logoColor=white" alt="MongoDB" /></a>
   <a href="https://fish.audio/"><img src="https://img.shields.io/badge/Fish_Audio-s2.1--pro--free-704BEF?style=for-the-badge" alt="Fish Audio speech synthesis" /></a>
   <a href="https://aimlapi.com/"><img src="https://img.shields.io/badge/AIML_API-suggestions-5B5BD6?style=for-the-badge" alt="AIML API" /></a>
+  <a href="https://vercel.com/analytics"><img src="https://img.shields.io/badge/Vercel_Analytics-page_views-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel Web Analytics" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-704BEF?style=for-the-badge" alt="MIT License" /></a>
 </p>
 
@@ -64,7 +65,7 @@ flowchart LR
   class AIML,Fish,PH provider
 ```
 
-The Next.js app proxies API requests to FastAPI. Provider credentials stay on the server. MongoDB stores tests, stable participant assignments, deduplicated votes, and generated audio in GridFS.
+The Next.js app proxies API requests to FastAPI. Provider credentials stay on the server. MongoDB stores tests, stable participant assignments, deduplicated votes, and generated audio in GridFS. Vercel Web Analytics records site page views when enabled for the Vercel project; optional PostHog handles HeardIt's product funnel events.
 
 ## Product safeguards
 
@@ -122,6 +123,8 @@ The FastAPI server reads private provider and database credentials. Never use `N
 | `NEXT_PUBLIC_POSTHOG_HOST` | Browser | Optional PostHog host. |
 
 The demo audio URL and its intended label must be configured together. See `.env.example` for a complete template.
+
+Vercel Analytics does not need an environment variable. Enable **Analytics** in the Vercel project's dashboard and redeploy to start collecting page views.
 
 ## API
 

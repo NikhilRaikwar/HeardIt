@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
 if (process.env.NODE_ENV === "production" && !configuredAppUrl) {
-  throw new Error("NEXT_PUBLIC_APP_URL must be set to the public HTTPS HeardIt origin for production metadata and share links.");
+  throw new Error("Missing NEXT_PUBLIC_APP_URL. In Vercel, set it to the public HTTPS URL of this HeardIt site in Project Settings → Environment Variables, then redeploy.");
 }
 const appUrl = configuredAppUrl || "http://localhost:3000";
 if (process.env.NODE_ENV === "production" && !appUrl.startsWith("https://")) {
@@ -50,5 +51,5 @@ export const metadata: Metadata = {
   },
 };
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
- return <html lang="en" suppressHydrationWarning><body className={`${geist.variable} ${mono.variable} ${serif.variable}`}><Providers>{children}</Providers></body></html>;
+ return <html lang="en" suppressHydrationWarning><body className={`${geist.variable} ${mono.variable} ${serif.variable}`}><Providers>{children}</Providers><Analytics /></body></html>;
 }
