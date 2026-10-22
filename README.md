@@ -81,6 +81,27 @@ MongoDB persists experiments, assignments, votes, and MP3 assets in GridFS. Prov
 
 The provided `public/banner.png` is used as the Open Graph and Twitter large-image preview. The public landing page has canonical metadata and Organization, WebSite, SoftwareApplication, and FAQ structured data; `robots.txt`, `sitemap.xml`, and `/llms.txt` describe the public site. Private, personalized, and experimental pages are excluded from indexing.
 
+## Screenshots
+
+These screenshots show the implemented landing page and creator studio at desktop and mobile widths. The landing demo correctly shows its setup state when no genuine public demo clip is configured; it does not substitute fabricated audio.
+
+<p align="center">
+  <img src="docs/screenshots/landing-desktop.png" alt="HeardIt landing page on desktop" width="720" />
+  <br /><em>Landing page · desktop</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/create-desktop.png" alt="HeardIt creator studio on desktop" width="720" />
+  <br /><em>Creator studio · desktop</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/landing-mobile.png" alt="HeardIt landing page on mobile" width="280" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/create-mobile.png" alt="HeardIt creator studio on mobile" width="220" />
+  <br /><em>Landing page and creator studio · mobile</em>
+</p>
+
 ## Product routes
 
 | Route | What it does |
