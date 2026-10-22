@@ -1,0 +1,17 @@
+[project]
+name = "heardit-api"
+version = "0.1.0"
+description = "Persistent AI voice listening experiment API"
+requires-python = ">=3.11"
+dependencies = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "pydantic>=2.10,<3", "pydantic-settings>=2.7,<3", "pymongo>=4.13,<5", "httpx>=0.28,<1"]
+
+[project.scripts]
+app = "app.main:app"
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2", "mongomock>=4.3,<5"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
