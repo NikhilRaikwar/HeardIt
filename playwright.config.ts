@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { e2eAdminKey } from "./e2e/test-key";
 
 const port = Number(process.env.PLAYWRIGHT_PORT || 3101);
 const baseURL = `http://127.0.0.1:${port}`;
@@ -20,7 +21,7 @@ export default defineConfig({
   ],
   webServer: {
     command: `node node_modules/next/dist/bin/next dev -H 127.0.0.1 -p ${port}`,
-    env: { ADMIN_KEY: "e2e-only-test-key-0123456789abcdef0123456789abcdef" },
+    env: { ADMIN_KEY: e2eAdminKey },
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

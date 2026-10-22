@@ -118,3 +118,14 @@ The guarded live smoke, genuine provider requests, live deployment, and executio
 | [GitHub advisory GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) | Lists `braces <=3.0.3` as affected and no patched version. All five npm findings trace to this one advisory through `braces → micromatch → fast-glob → @next/eslint-plugin-next → eslint-config-next`. |
 
 The five development-dependency alerts cannot currently be fixed without adopting a breaking dependency downgrade or an unpublished patch. Recheck the advisory and registry before the next dependency update; this is not a claim that the dev-tool vulnerability is fixed.
+
+## Security scan follow-up — 2026-10-23
+
+The GitGuardian PR check flagged the fixed local admin key used by the Playwright test in `e2e/heardit.spec.ts` (also configured in `playwright.config.ts`) as an API key. Review of its only uses confirms it is an E2E fixture, not a Fish, AIML, MongoDB, or deployment credential. The literal has been removed from both files; the test now derives the same local-only value at runtime from a non-secret phrase. The GitGuardian check must still pass on the updated PR before merge; the earlier scan's result is not represented as green here.
+
+| Command | Observed result |
+| --- | --- |
+| `npm run typecheck` | Exit 0 after replacing the E2E fixture literal. |
+| `npm run lint` | Exit 0 after replacing the E2E fixture literal. |
+| `HEARDIT_MONGO_TEST_URI=mongodb://127.0.0.1:27017 npm run api:test` | **60 passed in 2.57s** with the local Mongo test service available. |
+| `PLAYWRIGHT_PORT=3133 npm run test:e2e` | **33 passed in 1.2m** across desktop, tablet, and mobile. The first sandbox run could not bind its local test server; rerunning with local network access succeeded. Browser API calls in this suite are mocked/intercepted. |

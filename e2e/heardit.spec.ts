@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { e2eAdminKey } from "./test-key";
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/v1/events", route => route.fulfill({ status: 202, json: { accepted: true } }));
@@ -163,7 +164,7 @@ test("admin metrics require a private key and establish an HTTP-only expiring se
   await expect(page.getByLabel("Admin key")).toBeVisible();
   expect(await context.cookies()).toEqual([]);
 
-  await page.getByLabel("Admin key").fill("e2e-only-test-key-0123456789abcdef0123456789abcdef");
+  await page.getByLabel("Admin key").fill(e2eAdminKey);
   await page.getByRole("button", { name: "Open metrics" }).click();
   await expect(page.getByText(/Counts come from MongoDB/)).toBeVisible();
   const session = (await context.cookies()).find(cookie => cookie.name === "heardit-admin-session");
