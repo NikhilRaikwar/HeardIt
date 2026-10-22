@@ -1,0 +1,81 @@
+import { expect, test } from "@playwright/test";
+
+test("landing presents the HeardIt experiment and create CTA", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: /Same Words.*Four Meanings/ })).toBeVisible();
+  await expect(page.getByText("Can you hear what an AI voice really means?")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Create a listening test" }).first()).toHaveAttribute("href", "/create");
+  if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-landing-desktop.png", fullPage: true });
+  if (page.viewportSize()?.width === 375) await page.screenshot({ path: "test-results/heardit-landing-mobile.png", fullPage: true });
+});
+
+test("creator explains a plain-text API failure instead of throwing a JSON parse error", async ({ page }) => {
+  await page.route("**/api/v1/suggestions", route => route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" }));
+  await page.goto("/create");
+  await page.getByRole("button", { name: "AI suggest" }).click();
+  await expect(page.locator(".hi-error")).toContainText("unexpected response (HTTP 500)");
+});
+
+test("audio listener receives no sentence before voting and sees the intended reading after", async ({ page }) => {
+  const sentence = "The private sentence should not appear in an audio condition.";
+  await page.addInitScript(() => localStorage.setItem("heardit-participant", "participant-" + "a".repeat(48)));
+  await page.route("**/api/v1/tests/test-a/public**", route => route.fulfill({ json: { id: "test-a", condition: "audio", labels: ["Sarcastic", "Pleased", "Annoyed", "Sad"], audio_url: "/api/v1/audio/opaque-audio" } }));
+  await page.route("**/api/v1/tests/test-a/assignment", route => route.fulfill({ json: { condition: "audio" } }));
+  await page.route("**/api/v1/tests/test-a/votes", route => route.fulfill({ json: { submitted: true, intended_label: "Sarcastic", correct: true } }));
+  await page.route("**/api/v1/audio/opaque-audio", route => route.fulfill({ status: 200, contentType: "audio/mpeg", body: Buffer.from("mocked audio") }));
+  await page.goto("/t/test-a");
+  await expect(page.getByRole("heading", { name: "What do you hear?" })).toBeVisible();
+  if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-listener-desktop.png", fullPage: true });
+  await expect(page.getByText(sentence)).toHaveCount(0);
+  await page.getByRole("button", { name: /Sarcastic/ }).click();
+  await page.getByRole("button", { name: "Submit answer" }).click();
+  await expect(page.getByText("The creator intended")).toBeVisible();
+  if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-listener-reveal-desktop.png", fullPage: true });
+  await expect(page.locator(".hi-reveal b").first()).toHaveText("Sarcastic");
+  await expect(page.getByRole("button", { name: /Share test/ })).toBeVisible();
+});
+
+test("text condition receives sentence but not audio URL, and results render explicit zero-vote states", async ({ page }) => {
+  const sentence = "I thought you would be here by now.";
+  await page.addInitScript(() => { localStorage.setItem("heardit-participant", "participant-" + "b".repeat(48)); localStorage.setItem("heardit-owner-test-b", "private-test-token"); });
+  await page.route("**/api/v1/tests/test-b/assignment", route => route.fulfill({ json: { condition: "text" } }));
+  await page.route("**/api/v1/tests/test-b/public**", route => route.fulfill({ json: { id: "test-b", condition: "text", sentence, labels: ["Pleased", "Sarcastic", "Worried", "Annoyed"] } }));
+  await page.route("**/api/v1/tests/test-b/results", route => route.fulfill({ json: {
+    id: "test-b", intended_label: "Sarcastic", labels: ["Sarcastic", "Pleased", "Worried", "Annoyed"], total: 0,
+    audio: { n: 0, correct: 0, rate: null, interval: null, distribution: { Sarcastic: 0, Pleased: 0, Worried: 0, Annoyed: 0 } },
+    text: { n: 0, correct: 0, rate: null, interval: null, distribution: { Sarcastic: 0, Pleased: 0, Worried: 0, Annoyed: 0 } },
+    voice_lift: null, preliminary: true,
+  } }));
+  await page.goto("/t/test-b");
+  await expect(page.getByText(sentence)).toBeVisible();
+  await expect(page.locator("audio")).toHaveCount(0);
+  await page.goto("/r/test-b", { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("Preliminary results")).toBeVisible();
+  await expect(page.getByText("Insufficient data").first()).toBeVisible();
+  await expect(page.getByText("Not enough data")).toBeVisible();
+  if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-results-desktop.png", fullPage: true });
+});
+
+test("creator generates, reviews, and publishes a test through the staged journey", async ({ page }) => {
+  await page.route("**/api/v1/audio/generate", route => route.fulfill({ json: { audio_id: "saved-audio", url: "/api/v1/audio/saved-audio", cached: false, model: "s2.1-pro-free", direction: "[curious]", voice: "fish-account-default-v1", created_at: "2026-10-22T00:00:00Z" } }));
+  await page.route("**/api/v1/tests**", route => route.request().method() === "POST" ? route.fulfill({ status: 201, json: { id: "published-test", status: "published", management_token: "private-token" } }) : route.continue());
+  await page.route("**/api/v1/tests/published-test/creator", route => route.fulfill({ json: { id: "published-test", sentence: "I thought you said you’d be here by now.", intended_label: "Curious", distractors: ["Annoyed", "Hurt", "Playful"], direction: "[curious, slightly surprised, gentle tone]", model: "s2.1-pro-free", audio_id: "saved-audio", created_at: "2026-10-22T00:00:00Z", status: "published" } }));
+  await page.route("**/api/v1/audio/saved-audio", route => route.fulfill({ status: 200, contentType: "audio/mpeg", body: Buffer.from("mock audio") }));
+  await page.goto("/create");
+  await expect(page.getByRole("heading", { name: "Create a listening test" })).toBeVisible();
+  if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-create-desktop.png", fullPage: true });
+  if (page.viewportSize()?.width === 375) await page.screenshot({ path: "test-results/heardit-create-mobile.png", fullPage: true });
+  await page.getByRole("button", { name: /Generate voice/ }).click();
+  await expect(page.getByRole("heading", { name: "Your voice is ready" })).toBeVisible();
+  if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-generate-desktop.png", fullPage: true });
+  await expect(page.getByText("s2.1-pro-free").first()).toBeVisible();
+  await page.getByRole("button", { name: /Continue to review/ }).click();
+  await expect(page.getByRole("heading", { name: "Review your test" })).toBeVisible();
+  if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-review-desktop.png", fullPage: true });
+  await page.getByRole("button", { name: /Publish test/ }).click();
+  await expect(page.locator(".hi-error")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/created\/published-test$/);
+  await expect(page.getByRole("heading", { name: "Your test is live." })).toBeVisible();
+  if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-share-desktop.png", fullPage: true });
+  await expect(page.getByRole("link", { name: /Open listening test/ })).toHaveAttribute("href", "/t/published-test");
+});
