@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="232" height="48" viewBox="0 0 232 48" role="img" aria-labelledby="title desc">
+  <title id="title">HeardIt</title>
+  <desc id="desc">Purple waveform mark followed by the HeardIt wordmark.</desc>
+  <rect x="1" y="1" width="46" height="46" rx="14" fill="#704BEF"/>
+  <g fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round">
+    <path d="M13 19v10M20 14v20M27 21v6M34 12v24M41 18v12"/>
+  </g>
+  <text x="59" y="33" font-family="Geist, Inter, Arial, sans-serif" font-size="27" font-weight="700" letter-spacing="-1.7" fill="#17141D">heard</text>
+  <text x="135" y="33" font-family="Geist, Inter, Arial, sans-serif" font-size="27" font-weight="700" letter-spacing="-1.7" fill="#704BEF">it</text>
+</svg>
