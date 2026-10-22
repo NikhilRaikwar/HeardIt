@@ -53,6 +53,22 @@ Executed on 2026-10-23 (Asia/Calcutta), after consolidating Fish synthesis behin
 
 Provider API tests use mocked HTTPX responses. No genuine Fish Audio or AIML request was made; live provider credentials were not exercised by these checks.
 
+## Phase 3 — typed contracts, backend structure, and server rendering
+
+Executed on 2026-10-23 (Asia/Calcutta), after moving API routes under `apps/api/app/routers/`, extracting request/response schemas, vote-count aggregation and deterministic statistics, wiring the generated OpenAPI types through the frontend client, and adding generic listener metadata and a generic Open Graph image.
+
+| Command | Observed result |
+| --- | --- |
+| `npm run api:types` | Exit 0. FastAPI OpenAPI exported to `apps/api/openapi.json`; `openapi-typescript` generated `src/lib/api-schema.ts`. |
+| `HEARDIT_MONGO_TEST_URI=mongodb://127.0.0.1:27017 npm run api:test` | **56 passed in 2.63s**, including the local Mongo integration test, real Mongo result aggregation, parity with the prior Python output, zero-response behavior, and aggregate-only public product stats. |
+| `npm run typecheck` | Exit 0 with the typed `openapi-fetch` client and generated schema imports. |
+| `npm run lint` | Exit 0 with no warnings. |
+| `API_INTERNAL_URL=https://api-six-iota-fp3oos7pc0.vercel.app NEXT_PUBLIC_APP_URL=https://heardit-six.vercel.app npm run build` | Exit 0. `/` is statically rendered with a five-minute revalidation window; `/t/[id]` and its Open Graph image route are built. Next.js noted that the Edge runtime disables static generation for that route. This is a local build, not a deployment. |
+| `PLAYWRIGHT_PORT=3115 npm run test:e2e` | **24 passed in 1.1m** across 1440px desktop, 768px tablet and 375px mobile. The suite verifies generic listener metadata and generated image delivery in addition to the existing creator/listener/results flows. Browser API calls are mocked. |
+| Dependency import scan and UI reference scan | The listed animation, chart, form, query, schema, QR, and `mongomock` dependencies had no remaining product imports; unreferenced UI components were removed. `motion` remains because the active providers use `motion/react`. |
+
+The landing page reads only product-wide Mongo counts and does not include individual sentences, labels, or assignments. The schema-drift workflow was added but has not run on GitHub. No real Fish Audio or AIML request was made.
+
 ## Remaining verification
 
-Phases 3–5, real provider calls on this branch, live deployment, and GitHub CI have not run yet. Baseline live URLs above are configuration inputs, not a claim that the hardened branch is deployed.
+Phases 4–5, real provider calls on this branch, live deployment, and execution of the GitHub Actions workflow have not run. Baseline live URLs above are configuration inputs, not a claim that this branch is deployed.

@@ -11,7 +11,8 @@ from pymongo.errors import PyMongoError
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.db import close, require_database
-from app.heardit import ensure_indexes, router as heardit_router
+from app.routers import router as heardit_router
+from app.routers.heardit import ensure_indexes
 
 logger = logging.getLogger("heardit.api")
 settings = get_settings()

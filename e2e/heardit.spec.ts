@@ -9,6 +9,22 @@ test("landing presents the HeardIt experiment and create CTA", async ({ page }) 
   if (page.viewportSize()?.width === 375) await page.screenshot({ path: "test-results/heardit-landing-mobile.png", fullPage: true });
 });
 
+test("shared listening metadata and Open Graph image use generic copy", async ({ page }) => {
+  await page.goto("/t/private-test-id");
+  await expect(page).toHaveTitle(/A HeardIt listening experiment/);
+  await expect(page.locator('meta[property="og:description"]')).toHaveAttribute(
+    "content",
+    "Listen or read the same words, then choose the interpretation that fits best.",
+  );
+  const imageUrl = await page.locator('meta[property="og:image"]').getAttribute("content");
+  expect(imageUrl).toContain("opengraph-image");
+  expect(imageUrl).not.toContain("private sentence");
+  expect(imageUrl).not.toContain("voice direction");
+  const imageResponse = await page.request.get(imageUrl!);
+  expect(imageResponse.ok()).toBeTruthy();
+  expect(imageResponse.headers()["content-type"]).toContain("image/png");
+});
+
 test("creator explains a plain-text API failure instead of throwing a JSON parse error", async ({ page }) => {
   await page.route("**/api/v1/suggestions", route => route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" }));
   await page.goto("/create");

@@ -5,13 +5,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, AudioLines, Check, ClipboardCheck, Copy, FileText, Headphones, LoaderCircle, PencilLine, RefreshCw, Share2, Sparkles, Volume2 } from "lucide-react";
 import { track } from "@/components/heardit";
+import { hearditApi } from "@/lib/heardit-api";
+import type { components } from "@/lib/api-schema";
 
 type OptionDraft = { label: string; description: string };
-type AudioAsset = { audio_id: string; url: string; cached: boolean; model: string; direction: string; voice: string; created_at: string };
+type AudioAsset = components["schemas"]["AudioGenerateResponse"];
 type Draft = { sentence: string; options: [OptionDraft, OptionDraft, OptionDraft, OptionDraft]; direction: string; audio: AudioAsset | null; step: 1 | 2 | 3 };
-type Suggestion = { intended_label: string; alternative_labels: [string, string, string]; fish_direction: string; explanation: string };
-type Published = { id: string; management_token: string; status: string };
-type ApiFailure = { error?: { message?: string }; detail?: string };
 
 const DRAFT_KEY = "heardit-creator-draft-v2";
 const defaults: Draft = {
@@ -26,23 +25,6 @@ const defaults: Draft = {
   audio: null,
   step: 1,
 };
-
-async function api<T,>(path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
-    method: body ? "POST" : "GET",
-    headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...headers },
-    body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-  });
-  let data: unknown;
-  try { data = await response.json(); }
-  catch { throw new Error(`HeardIt API returned an unexpected response (HTTP ${response.status}). Check that the FastAPI service is running and reachable.`); }
-  if (!response.ok) {
-    const failure = data as ApiFailure;
-    throw new Error(failure.error?.message || failure.detail || `HeardIt API request failed (HTTP ${response.status}).`);
-  }
-  return data as T;
-}
 
 function Wordmark() {
   return <Link href="/" className="hi-wordmark" aria-label="HeardIt home"><span className="hi-mark"><AudioLines size={18}/></span><span>heard<span>it</span></span></Link>;
@@ -140,7 +122,7 @@ export function CreatorJourney() {
     setError(""); setNotice(""); setBusy(mode === "all" ? "suggest" : "direction");
     track("ai_suggestion_requested", { surface: mode === "all" ? "interpretations" : "direction" });
     try {
-      const result = await api<Suggestion>("/suggestions", { sentence: draft.sentence.trim(), intended_label: draft.options[0].label.trim() || undefined });
+      const result = await hearditApi.suggest({ sentence: draft.sentence.trim(), intended_label: draft.options[0].label.trim() || undefined });
       if (mode === "direction") { updateDirection(result.fish_direction); setNotice("Direction suggestion is ready. Review and edit it before generating."); }
       else {
         setDraft(current => ({ ...current, options: [{ ...current.options[0], label: result.intended_label }, ...result.alternative_labels.map((label, i) => ({ ...current.options[i + 1], label }))] as Draft["options"], direction: result.fish_direction, audio: null, step: 1 }));
@@ -157,7 +139,7 @@ export function CreatorJourney() {
     if (!draft.direction.trim()) { setError("Add a Fish Audio direction before generating."); return; }
     setBusy("generate"); track("voice_generation_started", { model: "s2.1-pro-free" });
     try {
-      const result = await api<AudioAsset>("/audio/generate", { sentence: draft.sentence.trim(), direction: draft.direction.trim() });
+      const result = await hearditApi.generateAudio({ sentence: draft.sentence.trim(), direction: draft.direction.trim() });
       setDraft(current => ({ ...current, audio: { ...result, url: result.url.startsWith("http") ? result.url : result.url || `/api/v1/audio/${result.audio_id}` }, step: 2 }));
       track("voice_generation_completed", { cached: result.cached, model: result.model });
     } catch (reason) { setError((reason as Error).message); track("voice_generation_failed"); }
@@ -188,7 +170,7 @@ export function CreatorJourney() {
         publishAttempt.current = { fingerprint, key };
         sessionStorage.setItem("heardit-publish-attempt-v1", JSON.stringify(publishAttempt.current));
       }
-      const result = await api<Published>("/tests", body, { "Idempotency-Key": publishAttempt.current.key });
+      const result = await hearditApi.publishTest(body, publishAttempt.current.key);
       localStorage.setItem(`heardit-owner-${result.id}`, result.management_token);
       localStorage.setItem(`heardit-owner-id-${result.id}`, "1");
       localStorage.removeItem(DRAFT_KEY);
@@ -238,7 +220,7 @@ export function CreatorJourney() {
   </div>;
 }
 
-type CreatorData = { id: string; sentence: string; intended_label: string; distractors: string[]; direction: string; model: string; audio_id: string; created_at: string; status: string };
+type CreatorData = components["schemas"]["CreatorTestResponse"];
 
 export function CreatedPage({ id }: { id: string }) {
   const [data, setData] = useState<CreatorData | null>(null);
@@ -250,7 +232,7 @@ export function CreatedPage({ id }: { id: string }) {
     track("share_page_viewed", { test_id: id });
     const token = localStorage.getItem(`heardit-owner-${id}`);
     if (!token) { setError("Creator access is saved on the device that published this test. This browser does not have that private access."); setLoading(false); return; }
-    api<CreatorData>(`/tests/${id}/creator`, undefined, { "X-Management-Token": token }).then(setData).catch(reason => setError((reason as Error).message)).finally(() => setLoading(false));
+    hearditApi.creatorTest(id, token).then(setData).catch(reason => setError((reason as Error).message)).finally(() => setLoading(false));
   }, [id]);
   async function copy() {
     try { await navigator.clipboard.writeText(url); setCopied(true); track("share_clicked", { surface: "created_page", test_id: id }); window.setTimeout(() => setCopied(false), 1800); }

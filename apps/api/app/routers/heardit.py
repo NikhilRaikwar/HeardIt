@@ -2,12 +2,10 @@
 import asyncio
 import base64, binascii, hashlib, hmac, ipaddress, json, re, secrets, uuid
 from datetime import datetime, timezone
-from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pymongo import ASCENDING
 from pymongo.errors import DuplicateKeyError
 from pymongo import ReturnDocument
@@ -16,11 +14,30 @@ from gridfs import AsyncGridFSBucket
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.db import require_database
+from app.repositories.experiments import aggregate_vote_counts
 from app.services.fish_tts import (
     FishTTSService,
     canonical_speech_text,
     get_fish_service,
     synthesis_cache_key,
+)
+from app.services.statistics import results_from_aggregates, wilson
+from app.schemas.heardit import (
+    AssignmentRequest,
+    AssignmentResponse,
+    AudioGenerateResponse,
+    CreateTest,
+    CreatorTestResponse,
+    GenerateRequest,
+    HealthResponse,
+    PublicTestResponse,
+    PublicProductStats,
+    PublishResponse,
+    ResultsResponse,
+    SuggestRequest,
+    Suggestion,
+    VoteRequest,
+    VoteResponse,
 )
 
 router = APIRouter()
@@ -49,73 +66,6 @@ async def ensure_indexes(db):
 async def require_indexed_database(db=Depends(require_database)):
     await ensure_indexes(db)
     return db
-
-class SuggestRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    sentence: str = Field(min_length=1, max_length=180)
-    intended_label: str | None = Field(default=None, max_length=60)
-
-class Suggestion(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    intended_label: str = Field(min_length=2, max_length=60)
-    alternative_labels: list[str] = Field(min_length=3, max_length=3)
-    fish_direction: str = Field(min_length=2, max_length=120)
-    explanation: str = Field(min_length=2, max_length=180)
-
-    @field_validator('alternative_labels')
-    @classmethod
-    def distinct_labels(cls, labels, info):
-        intended = info.data.get('intended_label', '')
-        if len({x.strip().casefold() for x in [intended, *labels]}) != 4:
-            raise ValueError('All four interpretations must be distinct.')
-        return [x.strip() for x in labels]
-
-class GenerateRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    sentence: str = Field(min_length=1, max_length=180)
-    direction: str = Field(min_length=1, max_length=120)
-
-class CreateTest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    sentence: str = Field(min_length=1, max_length=180)
-    intended_label: str = Field(min_length=1, max_length=60)
-    distractors: list[str] = Field(min_length=3, max_length=3)
-    direction: str = Field(min_length=1, max_length=120)
-    audio_id: str = Field(min_length=1)
-    option_descriptions: list[str] = Field(default_factory=list, max_length=4)
-
-    @field_validator('distractors')
-    @classmethod
-    def four_distinct(cls, labels, info):
-        all_labels = [info.data.get('intended_label', ''), *labels]
-        if len({x.strip().casefold() for x in all_labels}) != 4:
-            raise ValueError('The intended label and three alternatives must be distinct.')
-        return [x.strip() for x in labels]
-
-    @field_validator('option_descriptions')
-    @classmethod
-    def descriptions_match_options(cls, descriptions):
-        if descriptions and len(descriptions) != 4:
-            raise ValueError('Provide either zero or four option descriptions.')
-        return [value.strip()[:120] for value in descriptions]
-
-class VoteRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    participant_id: str = Field(min_length=24, max_length=128)
-    assignment_token: str = Field(min_length=1, max_length=2048)
-    selected_option_id: str | None = Field(default=None, min_length=1, max_length=64)
-    selected_label: str | None = Field(default=None, min_length=1, max_length=60)
-
-    @model_validator(mode='after')
-    def one_selection(self):
-        if bool(self.selected_option_id) == bool(self.selected_label):
-            raise ValueError('Choose exactly one answer option.')
-        return self
-
-class AssignmentRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    participant_id: str = Field(min_length=24, max_length=128)
-    captcha_token: str | None = Field(default=None, max_length=4096)
 
 def client_ip(request: Request) -> str:
     """Forwarded addresses are trustworthy only behind a sanitizing trusted proxy."""
@@ -194,11 +144,24 @@ def _gridfs(db):
 def _cache_key(sentence, direction):
     return synthesis_cache_key(direction, sentence, settings.fish_tts_model, settings.fish_default_voice_id)
 
-@router.get('/health')
+@router.get('/health', response_model=HealthResponse)
 async def health(db=Depends(require_database)):
     return {'status': 'ok', 'database': 'mongodb', 'fish_configured': bool(settings.fish_api_key.get_secret_value()), 'indexes_ready': indexes_ready()}
 
-@router.post('/api/v1/suggestions')
+
+@router.get('/api/v1/stats/public', response_model=PublicProductStats)
+async def public_product_stats(db=Depends(require_database)):
+    """Return only product-wide counts; no test text, labels, or assignments."""
+    published_tests = await db.heardit_tests.count_documents({'status': 'published'})
+    listener_responses = await db.heardit_votes.count_documents({})
+    responded_test_ids = await db.heardit_votes.distinct('test_id')
+    return {
+        'published_tests': published_tests,
+        'tests_with_responses': len(responded_test_ids),
+        'listener_responses': listener_responses,
+    }
+
+@router.post('/api/v1/suggestions', response_model=Suggestion)
 async def suggestions(body: SuggestRequest, request: Request, db=Depends(require_indexed_database)):
     if not settings.aiml_api_key.get_secret_value():
         raise AppError(503, 'aiml_not_configured', 'AI suggestions are unavailable right now. Add interpretations manually and continue.')
@@ -224,7 +187,7 @@ async def suggestions(body: SuggestRequest, request: Request, db=Depends(require
                 error = exc
     raise AppError(502, 'aiml_invalid_output', 'AI could not suggest valid choices. Add interpretations manually and continue.') from error
 
-@router.post('/api/v1/audio/generate')
+@router.post('/api/v1/audio/generate', response_model=AudioGenerateResponse)
 async def generate(body: GenerateRequest, request: Request, db=Depends(require_indexed_database), fish: FishTTSService=Depends(get_fish_service)):
     await _rate_limit(db, 'generate:' + _ip_hash(request), 10)
     cache = _cache_key(body.sentence, body.direction)
@@ -288,7 +251,7 @@ async def _rate_limit(db, key, max_count, seconds=3600):
     result = await db.heardit_rate_limits.find_one_and_update({'_id':f'{key}:{window}'},{'$inc':{'count':1},'$setOnInsert':{'expires_at':datetime.now(timezone.utc)+timedelta(seconds=seconds*2)}},upsert=True,return_document=ReturnDocument.AFTER)
     if result['count'] > max_count: raise AppError(429,'rate_limited','Too many requests. Please try again later.')
 
-@router.post('/api/v1/tests', status_code=201)
+@router.post('/api/v1/tests', status_code=201, response_model=PublishResponse)
 async def create_test(
     body: CreateTest,
     request: Request,
@@ -365,14 +328,14 @@ def _require_management_token(test, token):
     if not token or not expected or not secrets.compare_digest(supplied, expected):
         raise AppError(401, 'creator_access_required', 'Open this page on the device that created the test, or use its private creator access.')
 
-@router.get('/api/v1/tests/{test_id}/creator')
+@router.get('/api/v1/tests/{test_id}/creator', response_model=CreatorTestResponse)
 async def creator_test(test_id: str, x_management_token: str | None = Header(default=None), db=Depends(require_database)):
     test = await db.heardit_tests.find_one({'id':test_id,'status':'published'})
     if not test: raise AppError(404,'test_not_found','This listening test could not be found.')
     _require_management_token(test, x_management_token)
     return {'id':test['id'],'sentence':test['sentence'],'intended_label':test['intended_label'],'distractors':test['distractors'],'direction':test['direction'],'model':test['model'],'audio_id':test['audio_id'],'created_at':test['created_at'],'status':test['status']}
 
-@router.get('/api/v1/tests/{test_id}/public')
+@router.get('/api/v1/tests/{test_id}/public', response_model=PublicTestResponse, response_model_exclude_none=True)
 async def public_test(test_id: str, participant_id: str, x_assignment_token: str | None = Header(default=None), db=Depends(require_database)):
     doc = await db.heardit_tests.find_one({'id':test_id,'status':'published'})
     if not doc: raise AppError(404,'test_not_found','This listening test could not be found.')
@@ -384,7 +347,7 @@ async def public_test(test_id: str, participant_id: str, x_assignment_token: str
     else: result['sentence'] = doc['sentence']
     return result
 
-@router.post('/api/v1/tests/{test_id}/assignment')
+@router.post('/api/v1/tests/{test_id}/assignment', response_model=AssignmentResponse)
 async def assignment(test_id: str, body: AssignmentRequest, request: Request, x_management_token: str | None = Header(default=None), db=Depends(require_indexed_database)):
     participant = body.participant_id
     await _rate_limit(db, 'assignment:ip:' + _ip_hash(request), settings.assignment_ip_minute, 60)
@@ -406,7 +369,7 @@ async def assignment(test_id: str, body: AssignmentRequest, request: Request, x_
     issued_at = int(datetime.now(timezone.utc).timestamp())
     return {'condition':row['condition'], 'assignment_token':_assignment_token(test_id, hashed, row['condition'], issued_at), 'creator_preview':False}
 
-@router.post('/api/v1/tests/{test_id}/votes', status_code=201)
+@router.post('/api/v1/tests/{test_id}/votes', status_code=201, response_model=VoteResponse)
 async def vote(test_id: str, body: VoteRequest, request: Request, x_management_token: str | None = Header(default=None), db=Depends(require_indexed_database)):
     await _rate_limit(db, 'vote:ip:' + _ip_hash(request), settings.vote_ip_minute, 60)
     await _rate_limit(db, 'vote:test:' + test_id, settings.vote_test_minute, 60)
@@ -423,24 +386,24 @@ async def vote(test_id: str, body: VoteRequest, request: Request, x_management_t
     except DuplicateKeyError: raise AppError(409,'already_voted','Your response has already been recorded.')
     return {'submitted':True,'intended_label':test['intended_label'],'correct':correct}
 
-@router.get('/api/v1/tests/{test_id}/results')
+@router.get('/api/v1/tests/{test_id}/results', response_model=ResultsResponse)
 async def results(test_id: str, x_management_token: str | None = Header(default=None), db=Depends(require_database)):
     test = await db.heardit_tests.find_one({'id':test_id,'status':'published'})
     if not test: raise AppError(404,'test_not_found','This listening test could not be found.')
     _require_management_token(test, x_management_token)
-    votes = [v async for v in db.heardit_votes.find({'test_id':test_id})]
-    def group(condition):
-        rows=[v for v in votes if v['assigned_condition']==condition]; n=len(rows); k=sum(v['correct'] for v in rows)
-        return {'n':n,'correct':k,'rate':k/n if n else None,'interval':wilson(k,n),'distribution':{label:sum(v['selected_label'].casefold()==label.casefold() for v in rows) for label in [test['intended_label'],*test['distractors']]}}
-    audio,text=group('audio'),group('text')
-    return {'id':test_id,'intended_label':test['intended_label'],'labels':[test['intended_label'],*test['distractors']],'total':len(votes),'audio':audio,'text':text,'voice_lift':audio['rate']-text['rate'] if audio['rate'] is not None and text['rate'] is not None else None,'preliminary':len(votes)<20,'interpretation':'Exploratory randomized sample; this difference is not proof of a universal voice effect.'}
+    labels = [test['intended_label'], *test['distractors']]
+    vote_counts = await aggregate_vote_counts(db, test_id)
+    return results_from_aggregates(test_id, test['intended_label'], labels, vote_counts)
 
-def wilson(k,n,z=1.959963984540054):
-    if not n:return None
-    p=k/n; den=1+z*z/n; center=(p+z*z/(2*n))/den; margin=z*((p*(1-p)/n+z*z/(4*n*n))**.5)/den
-    return [max(0,center-margin),min(1,center+margin)]
-
-@router.get('/api/v1/audio/{audio_id}')
+@router.get(
+    '/api/v1/audio/{audio_id}',
+    response_class=StreamingResponse,
+    responses={
+        200: {'content': {'audio/mpeg': {'schema': {'type':'string','format':'binary'}}}},
+        206: {'description':'Partial audio response', 'content': {'audio/mpeg': {'schema': {'type':'string','format':'binary'}}}},
+        416: {'description':'The requested byte range is not satisfiable.'},
+    },
+)
 async def get_audio(audio_id: str, request: Request, db=Depends(require_database)):
     asset = await db.audio_assets.find_one({'id':audio_id})
     if not asset:

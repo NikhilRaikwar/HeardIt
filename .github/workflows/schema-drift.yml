@@ -1,0 +1,22 @@
+name: OpenAPI schema drift
+
+on:
+  pull_request:
+  push:
+    branches: [main, engineering-readiness]
+
+jobs:
+  schema-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+      - run: npm ci
+      - name: Regenerate FastAPI OpenAPI client types
+        run: npm run api:types
+      - name: Fail when generated API contracts are stale
+        run: git diff --exit-code -- apps/api/openapi.json src/lib/api-schema.ts

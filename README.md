@@ -33,6 +33,8 @@ Listeners open a share link and are randomly assigned to one of two groups: hear
 
 HeardIt measures interpretation in a small randomized sample. It does not measure voice quality or make population-wide claims.
 
+The landing page can show MongoDB-backed, product-wide counts for saved listener responses and tests with at least one response. These counts are cached for up to five minutes and do not expose sentence text, intended labels, or individual assignments.
+
 ## How it works
 
 1. **Create:** Write a sentence and confirm four distinct interpretations.
@@ -47,8 +49,8 @@ HeardIt measures interpretation in a small randomized sample. It does not measur
 flowchart LR
   Creator[Creator] --> Web[Next.js and TypeScript<br/>Studio · Share · Results]
   Listener[Listener] --> Web
-  Web -->|Suggestion request| AIML[AIML API]
-  Web -->|Approved synthesis request| API[FastAPI]
+  Web -->|Suggestion or approved synthesis request| API[FastAPI]
+  API -->|Validated suggestion request| AIML[AIML API]
   API -->|Generate MP3| Fish[Fish Audio<br/>s2.1-pro-free]
   API --> DB[(MongoDB<br/>Tests · Assignments · Votes · GridFS audio)]
   Web -->|Blind test and vote| API
@@ -65,7 +67,7 @@ flowchart LR
   class AIML,Fish,PH provider
 ```
 
-The Next.js app proxies API requests to FastAPI. Provider credentials stay on the server. MongoDB stores tests, stable participant assignments, deduplicated votes, and generated audio in GridFS. Vercel Web Analytics records site page views when enabled for the Vercel project; optional PostHog handles HeardIt's product funnel events.
+The Next.js app proxies API requests to FastAPI. Provider credentials stay on the server. MongoDB stores tests, stable participant assignments, deduplicated votes, and generated audio in GridFS. The frontend API client is typed from FastAPI's OpenAPI schema. Vercel Web Analytics records site page views when enabled for the Vercel project; optional PostHog handles HeardIt's product funnel events.
 
 ## Product safeguards
 
@@ -139,6 +141,7 @@ FastAPI exposes `/health` and these `/api/v1` operations:
 - `POST /tests`, `GET /tests/{id}/public` — publish and return blind-safe test data.
 - `POST /tests/{id}/assignment`, `POST /tests/{id}/votes` — assign conditions and persist responses.
 - `GET /tests/{id}/results` — return creator-authorized experiment statistics.
+- `GET /stats/public` — return product-wide counts without test content or labels.
 
 Creator-only endpoints require the management capability. TypeScript API definitions are generated from `apps/api/openapi.json` into `src/lib/api-schema.ts`:
 
@@ -150,6 +153,7 @@ npm run api:types
 
 ```powershell
 npm run api:test
+npm run api:types
 npm run typecheck
 npm run lint
 npm run build
@@ -157,6 +161,8 @@ npm run test:e2e
 ```
 
 The E2E suite mocks API responses; it does not replace a live MongoDB and provider smoke test. Install the Playwright browser with `npx playwright install chromium` when needed. To use a different free port, set `$env:PLAYWRIGHT_PORT` before running the suite.
+
+The GitHub Actions schema-drift check regenerates `apps/api/openapi.json` and `src/lib/api-schema.ts` and fails if either generated file differs from the committed version.
 
 ## License
 

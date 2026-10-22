@@ -8,7 +8,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-import app.heardit as experiments
+import app.routers.heardit as experiments
 from app.core.config import Settings
 from app.db import require_database
 from app.main import app

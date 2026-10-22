@@ -15,7 +15,7 @@ from pymongo import AsyncMongoClient
 from pydantic import SecretStr
 from pymongo.errors import DuplicateKeyError
 
-import app.heardit as heardit
+import app.routers.heardit as heardit
 import app.main as main
 from app.core.errors import AppError
 from app.db import require_database
@@ -356,6 +356,7 @@ async def test_real_mongo_recovers_after_startup_outage_and_indexes_before_vote(
                 'sentence':'A real Mongo-backed assignment.',
                 'intended_label':'Curious',
                 'distractors':['Annoyed','Hurt','Playful'],
+                'creator_management_token_hash':hashlib.sha256(CREATOR_TOKEN.encode()).hexdigest(),
             })
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url='http://test') as client:
                 before = await client.get('/health')
@@ -377,6 +378,15 @@ async def test_real_mongo_recovers_after_startup_outage_and_indexes_before_vote(
                     'selected_label':'Curious',
                 })
                 assert vote.status_code == 201, vote.text
+                results = await client.get(
+                    f'/api/v1/tests/{test_id}/results',
+                    headers={'X-Management-Token':CREATOR_TOKEN},
+                )
+                assert results.status_code == 200, results.text
+                summary = results.json()
+                assert summary['total'] == 1
+                assert summary[assignment.json()['condition']]['distribution']['Curious'] == 1
+                assert summary[assignment.json()['condition']]['interval'] is not None
                 health = await client.get('/health')
                 assert health.json()['indexes_ready'] is True
     finally:

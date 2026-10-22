@@ -6,7 +6,9 @@ from pymongo.errors import DuplicateKeyError
 from starlette.requests import Request
 
 from app.core.errors import AppError
-from app.heardit import Suggestion, CreateTest, AssignmentRequest, VoteRequest, _cache_key, assignment, public_test, results, vote, wilson
+from app.routers.heardit import _cache_key, assignment, public_product_stats, public_test, results, vote
+from app.schemas.heardit import AssignmentRequest, CreateTest, Suggestion, VoteRequest
+from app.services.statistics import wilson
 
 MANAGEMENT_TOKEN = 'creator-management-token-for-tests'
 
@@ -35,6 +37,24 @@ class FakeCollection:
             self.rows.append(row)
         for key, value in update.get('$inc', {}).items(): row[key] = row.get(key, 0) + value
         return row
+    async def aggregate(self, pipeline):
+        test_id = pipeline[0]['$match']['test_id']
+        counts = {}
+        for row in self.rows:
+            if row.get('test_id') != test_id:
+                continue
+            key = (row['assigned_condition'], row['selected_label'])
+            aggregate = counts.setdefault(key, {'count': 0, 'correct': 0})
+            aggregate['count'] += 1
+            aggregate['correct'] += int(row['correct'])
+        return FakeCursor([
+            {'_id': {'condition': condition, 'selected_label': label}, **aggregate}
+            for (condition, label), aggregate in sorted(counts.items())
+        ])
+    async def count_documents(self, query):
+        return sum(all(row.get(key) == value for key, value in query.items()) for row in self.rows)
+    async def distinct(self, key):
+        return list(dict.fromkeys(row[key] for row in self.rows if key in row))
 
 
 class FakeDB:
@@ -133,3 +153,55 @@ async def test_zero_response_results_return_insufficient_group_data():
     assert summary['total'] == 0
     assert summary['audio']['rate'] is None and summary['text']['rate'] is None
     assert summary['voice_lift'] is None and summary['preliminary']
+
+
+@pytest.mark.asyncio
+async def test_mongodb_result_aggregation_matches_previous_python_output():
+    db = FakeDB()
+    db.heardit_votes.rows = [
+        {'test_id':'test-1','assigned_condition':'audio','selected_label':'Sarcastic','correct':True},
+        {'test_id':'test-1','assigned_condition':'audio','selected_label':'Annoyed','correct':False},
+        {'test_id':'test-1','assigned_condition':'text','selected_label':'Sarcastic','correct':True},
+        {'test_id':'test-1','assigned_condition':'text','selected_label':'Pleased','correct':False},
+    ]
+    summary = await results('test-1', x_management_token=MANAGEMENT_TOKEN, db=db)
+    labels = ['Sarcastic','Pleased','Sad','Angry']
+
+    def previous_python_group(condition):
+        rows = [row for row in db.heardit_votes.rows if row['assigned_condition'] == condition]
+        n = len(rows)
+        correct = sum(row['correct'] for row in rows)
+        return {
+            'n':n,
+            'correct':correct,
+            'rate':correct / n if n else None,
+            'interval':wilson(correct, n),
+            'distribution':{label:sum(row['selected_label'].casefold() == label.casefold() for row in rows) for label in labels},
+        }
+
+    audio = previous_python_group('audio')
+    text = previous_python_group('text')
+    expected = {
+        'id':'test-1',
+        'intended_label':'Sarcastic',
+        'labels':labels,
+        'total':4,
+        'audio':audio,
+        'text':text,
+        'voice_lift':audio['rate'] - text['rate'],
+        'preliminary':True,
+        'interpretation':'Exploratory randomized sample; this difference is not proof of a universal voice effect.',
+    }
+    assert summary == expected
+
+
+@pytest.mark.asyncio
+async def test_public_product_stats_only_expose_aggregate_counts():
+    db = FakeDB()
+    db.heardit_votes.rows = [
+        {'test_id':'test-1','assigned_condition':'audio','selected_label':'Sarcastic','correct':True},
+        {'test_id':'test-1','assigned_condition':'text','selected_label':'Sad','correct':False},
+    ]
+    result = await public_product_stats(db)
+    assert result == {'published_tests':1,'tests_with_responses':1,'listener_responses':2}
+    assert not {'sentence','intended_label','direction','assigned_condition'} & result.keys()

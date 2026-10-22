@@ -1,4 +1,30 @@
 import { Landing } from "@/components/heardit";
+import type { components } from "@/lib/api-schema";
+
+type PublicStats = components["schemas"]["PublicProductStats"];
+
+function isPublicStats(value: unknown): value is PublicStats {
+  if (!value || typeof value !== "object") return false;
+  const stats = value as Record<string, unknown>;
+  return Number.isInteger(stats.published_tests)
+    && Number.isInteger(stats.tests_with_responses)
+    && Number.isInteger(stats.listener_responses);
+}
+
+export const revalidate = 300;
+
+async function getPublicStats(): Promise<PublicStats | null> {
+  const apiOrigin = process.env.API_INTERNAL_URL?.replace(/\/$/, "");
+  if (!apiOrigin) return null;
+  try {
+    const response = await fetch(`${apiOrigin}/api/v1/stats/public`, { next: { revalidate } });
+    if (!response.ok) return null;
+    const value: unknown = await response.json();
+    return isPublicStats(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
 
 const publicOrigin = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -65,9 +91,10 @@ const structuredData = [
   },
 ];
 
-export default function Page() {
+export default async function Page() {
+  const publicStats = await getPublicStats();
   return <>
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />
-    <Landing />
+    <Landing publicStats={publicStats} />
   </>;
 }
