@@ -1,0 +1,11 @@
+services:
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - heardit-mongo:/data/db
+
+volumes:
+  heardit-mongo:
