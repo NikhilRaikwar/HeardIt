@@ -101,7 +101,7 @@ Executed on 2026-10-23 (Asia/Calcutta). Added an opt-in API smoke flow that crea
 
 ## Remaining verification
 
-The guarded live smoke, genuine provider requests, live deployment, and execution of the GitHub Actions workflow have not run. Baseline live URLs above are configuration inputs, not a claim that this branch is deployed.
+The guarded live Fish/AIML smoke and PostHog journey have not run; no production deployment is claimed. The PR preview deployments and GitHub Actions checks were run and are recorded below. GitGuardian remains a merge blocker until the two historical E2E fixture detections are classified as test credentials and the check passes. Baseline live URLs above are configuration inputs, not evidence of a production deployment.
 
 ## Verification follow-up — 2026-10-23
 
@@ -129,3 +129,6 @@ The GitGuardian PR check flagged the fixed local admin key used by the Playwrigh
 | `npm run lint` | Exit 0 after replacing the E2E fixture literal. |
 | `HEARDIT_MONGO_TEST_URI=mongodb://127.0.0.1:27017 npm run api:test` | **60 passed in 2.57s** with the local Mongo test service available. |
 | `PLAYWRIGHT_PORT=3133 npm run test:e2e` | **33 passed in 1.2m** across desktop, tablet, and mobile. The first sandbox run could not bind its local test server; rerunning with local network access succeeded. Browser API calls in this suite are mocked/intercepted. |
+| GitHub Actions on `ddc60e3` | PR and push `verify` jobs passed, including Mongo integration tests, OpenAPI drift, analytics tests, typecheck, lint, production build, and Playwright; both schema-drift jobs passed. |
+| Vercel PR previews on `ddc60e3` | API and frontend preview deployment checks passed. These are branch previews, not a production release or live Fish smoke test. |
+| `GitGuardian Security Checks` on `ddc60e3` | **Failed:** 2 findings across 8 PR commits. The scan examines each commit, so removing the local fixture from the final tree does not clear earlier occurrences. Source verification indicates the findings are the E2E-only admin fixture in the test and Playwright config, not provider credentials. No merge until the dashboard incidents are classified as test credentials and the check passes. |
