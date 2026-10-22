@@ -187,6 +187,21 @@ The E2E suite mocks API responses; it does not replace a live MongoDB and provid
 
 The GitHub Actions schema-drift check regenerates `apps/api/openapi.json` and `src/lib/api-schema.ts` and fails if either generated file differs from the committed version.
 
+### Opt-in live API smoke flow
+
+`scripts/smoke.py` (also available through `sh scripts/smoke.sh`) exercises health, Fish-backed audio generation, saved MP3 range delivery, publish, randomized assignment, blind-safe public content, one vote, and creator-authorized results after a fresh request. Fish and MongoDB credentials stay configured on FastAPI; this script reads only the API origin from `.env` and never forwards or prints provider credentials. A successful run leaves one test and one vote in MongoDB. Audio generation may reuse a cached Fish clip, which the script reports.
+
+The smoke flow is intentionally not part of CI. Set `HEARDIT_CONFIRM_LIVE_FISH=YES` only when you intend to create persistent data and request audio generation. `HEARDIT_API_URL` overrides the local default `http://127.0.0.1:8000`; use HTTPS for a remote API. The generated participant ID exercises the backend's stable-assignment path, but this API smoke check is not a second real browser profile or proof of unique human identity.
+
+```powershell
+$env:HEARDIT_CONFIRM_LIVE_FISH = "YES"
+# Optional for a remote FastAPI deployment:
+$env:HEARDIT_API_URL = "https://your-fastapi-host"
+uv run --directory apps/api python ../../scripts/smoke.py
+```
+
+On macOS/Linux, run `HEARDIT_CONFIRM_LIVE_FISH=YES HEARDIT_API_URL=https://your-fastapi-host sh scripts/smoke.sh`. Do not put provider keys in these commands; configure them only on FastAPI.
+
 ## License
 
 HeardIt is available under the [MIT License](LICENSE).

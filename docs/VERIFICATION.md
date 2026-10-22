@@ -88,6 +88,17 @@ Executed on 2026-10-23 (Asia/Calcutta). Added PostHog SDK capture with browser/s
 
 The live Fish demo seed script was not run: it would call the configured Fish Audio service and consume the account's synthesis allowance. The sample manifest is therefore absent, and the landing page correctly reports that no clips are ready. No genuine Fish Audio or AIML request, PostHog capture, live deployment, or GitHub Actions run occurred. The `ci.yml` workflow was added but only its constituent local commands above were run.
 
+## Phase 5 — guarded live smoke tooling
+
+Executed on 2026-10-23 (Asia/Calcutta). Added an opt-in API smoke flow that creates a real test and vote, requests generation through the configured FastAPI service, checks Range delivery, validates condition-specific public content, and confirms results remain after a new request. The script refuses to make network calls unless `HEARDIT_CONFIRM_LIVE_FISH=YES` is set; it reads only API-origin values from `.env` and does not send provider keys to the API.
+
+| Command | Observed result |
+| --- | --- |
+| `uv run --directory apps/api python -m py_compile ../../scripts/smoke.py` | Exit 0. The local Windows `python.exe` app alias was unavailable, so the repository's `uv` Python runtime was used. |
+| `C:\Program Files\Git\bin\bash.exe -n scripts/smoke.sh` | Exit 0 (`bash syntax ok`). The direct sandbox attempt was denied by Windows process restrictions; the syntax-only retry succeeded outside the sandbox. |
+| `uv run --directory apps/api python ../../scripts/smoke.py` with `HEARDIT_CONFIRM_LIVE_FISH` unset | Exit 2 with the opt-in instruction. No network request was made. |
+| Guarded live smoke against FastAPI/Fish/MongoDB | Not run. It creates persistent test/vote data and requests audio generation; no live-use confirmation was supplied in this task. |
+
 ## Remaining verification
 
-Phase 5 smoke tooling and run evidence remain. Real provider calls, live deployment, and execution of the GitHub Actions workflow have not run. Baseline live URLs above are configuration inputs, not a claim that this branch is deployed.
+The guarded live smoke, genuine provider requests, live deployment, and execution of the GitHub Actions workflow have not run. Baseline live URLs above are configuration inputs, not a claim that this branch is deployed.
