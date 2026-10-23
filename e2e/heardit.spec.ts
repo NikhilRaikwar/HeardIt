@@ -130,8 +130,8 @@ test("creator generates, reviews, and publishes a test through the staged journe
   await page.goto("/create");
   await expect(page.getByRole("heading", { name: "Create a listening test" })).toBeVisible();
   await page.getByText("Alternative 1").click();
-  await expect(page.getByRole("button", { name: "Make Annoyed the intended meaning" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("button", { name: "Curious is the intended meaning" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: "Annoyed is the intended meaning" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Make Curious the intended meaning" })).toHaveAttribute("aria-pressed", "false");
   if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-create-desktop.png", fullPage: true });
   if (page.viewportSize()?.width === 375) await page.screenshot({ path: "test-results/heardit-create-mobile.png", fullPage: true });
   await page.getByRole("button", { name: /Generate voice/ }).click();
