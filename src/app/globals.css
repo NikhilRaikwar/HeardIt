@@ -298,6 +298,9 @@ html:has(.hi-landing){scroll-snap-type:y proximity}
 .hi-demo-prompt{font-size:13px;min-height:0}
 .hi-demo-reveal{font-size:12px}
 .hi-demo-foot{font-size:11px}
+.hi-hero:not(:has(.hi-hero-art)){grid-template-columns:minmax(0,1fr)}
+.hi-hero:not(:has(.hi-hero-art)) .hi-hero-copy{max-width:920px}
+.hi-demo-not-configured>p{margin:24px auto 18px;color:var(--hi-muted);font-size:14px}
 .hi-section-heading .hi-small-label{font-size:10px}
 .hi-section-heading h2{font-size:29px}
 .hi-section-heading>p{font-size:13px}
@@ -554,6 +557,13 @@ html:has(.hi-landing){scroll-snap-type:y proximity}
 .hj-social-share{display:flex;flex-wrap:wrap;justify-content:center;gap:9px}.hj-social-share>a,.hj-social-share>button{min-height:36px;padding:0 11px;display:inline-flex;align-items:center;gap:6px;border:1px solid #e9e4ef;border-radius:9px;background:#fff;color:#5c5568;font-size:11px;text-decoration:none;cursor:pointer}
 .hj-created-actions{display:flex;justify-content:center;gap:10px;margin:26px 0 14px}.hj-created-actions .hi-button{min-height:42px;padding:0 16px;text-decoration:none}.hj-private-note{max-width:520px;margin:15px auto;color:#817b8b;font-size:11px;line-height:1.55}.hj-private-note>span{color:#704bef}.hj-created-meta{color:#9892a0;font-size:10px}.hj-home-link{display:inline-flex;align-items:center;gap:5px;margin-top:12px;color:#706a7b;font-size:12px;text-decoration:none}
 .hj-share-progress .hi-landing-nav{display:none}
+.hi-captcha-gate{max-width:540px;margin:48px auto;padding:clamp(24px,5vw,42px);text-align:center}
+.hi-captcha-gate h1{margin:10px 0;font-size:clamp(26px,5vw,36px)}
+.hi-captcha-gate .hi-instruction{margin-bottom:22px}
+.hi-turnstile{width:100%;margin:16px auto;display:grid;justify-items:center;gap:7px}
+.hi-turnstile>div{min-height:65px}
+.hi-turnstile p{margin:0;color:#827b8d;font-size:12px}
+.hj-review-card>.hi-turnstile{padding:14px 0;border-top:1px solid #efecf3}
 .hj-audio-preview{flex-wrap:wrap}
 .hj-audio-preview audio{width:auto;flex:1 1 280px}
 .hj-audio-error{flex:0 0 100%;margin-left:52px}

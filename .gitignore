@@ -24,3 +24,5 @@ __pycache__/
 *.wav
 *.m4a
 *.ogg
+!public/demo/
+!public/demo/*.mp3

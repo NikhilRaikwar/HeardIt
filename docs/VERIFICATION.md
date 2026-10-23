@@ -123,6 +123,8 @@ The five development-dependency alerts cannot currently be fixed without adoptin
 
 The GitGuardian PR check flagged the fixed local admin key used by the Playwright test in `e2e/heardit.spec.ts` (also configured in `playwright.config.ts`) as an API key. Review of its only uses confirms it is an E2E fixture, not a Fish, AIML, MongoDB, or deployment credential. The literal has been removed from both files; the test now derives the same local-only value at runtime from a non-secret phrase. The GitGuardian check must still pass on the updated PR before merge; the earlier scan's result is not represented as green here.
 
+The two remaining dashboard alerts refer to historical E2E fixture occurrences in `e2e/heardit.spec.ts` and `playwright.config.ts`. `.gitguardian.yaml` excludes those test-only paths from future path scans; it does not dismiss the existing dashboard incidents. Dismiss the historical findings manually in GitGuardian after confirming the fixture-only use. These are not provider or deployment credentials.
+
 | Command | Observed result |
 | --- | --- |
 | `npm run typecheck` | Exit 0 after replacing the E2E fixture literal. |
@@ -132,3 +134,37 @@ The GitGuardian PR check flagged the fixed local admin key used by the Playwrigh
 | GitHub Actions on `ddc60e3` | PR and push `verify` jobs passed, including Mongo integration tests, OpenAPI drift, analytics tests, typecheck, lint, production build, and Playwright; both schema-drift jobs passed. |
 | Vercel PR previews on `ddc60e3` | API and frontend preview deployment checks passed. These are branch previews, not a production release or live Fish smoke test. |
 | `GitGuardian Security Checks` on `ddc60e3` | **Failed:** 2 findings across 8 PR commits. The scan examines each commit, so removing the local fixture from the final tree does not clear earlier occurrences. Source verification indicates the findings are the E2E-only admin fixture in the test and Playwright config, not provider credentials. No merge until the dashboard incidents are classified as test credentials and the check passes. |
+
+## Final-polish Phase 5 — repository honesty and hygiene
+
+Executed on 2026-10-23 (Asia/Calcutta) on local branch `final-polish`. No live Fish Audio, AIML, PostHog, or deployment request was made.
+
+| Command | Observed result |
+| --- | --- |
+| `npm audit` | Exit 1: **5 high** development dependency findings in `braces → micromatch → fast-glob → @next/eslint-plugin-next → eslint-config-next`. |
+| `npm view braces version` | Registry returned **3.0.3**, the same version covered by advisory GHSA-vfj7-8cjw-p6xm (`<=3.0.3`). No safe patched override target is available. |
+| `npm audit fix --dry-run` | Exit 1; proposed fix is a breaking downgrade to `eslint-config-next@14.2.35`. No override or dependency change was made. |
+| `npm audit --omit=dev` | Exit 0: **0 vulnerabilities** in production dependencies. |
+| Demo clip generation, live smoke, PostHog journey, deployment curl check | Not run. These are explicit owner-run manual steps; see the final handoff. |
+
+## Final-polish branch verification — 2026-10-23
+
+All checks below ran locally on `final-polish`. Playwright uses mocked API responses; no live provider or deployment API was called. `npm run api:test` collects 61 tests; its Mongo integration case is skipped unless `HEARDIT_MONGO_TEST_URI` is configured.
+
+| Phase | Backend pytest | TypeScript | ESLint | Analytics test | Playwright |
+| --- | --- | --- | --- | --- | --- |
+| 1 — static demo assets | 59 passed, 1 skipped | Exit 0 | Exit 0 | 1 passed | 39 passed |
+| 2 — optional Turnstile | 59 passed, 1 skipped | Exit 0 | Exit 0 | 1 passed | 39 passed; Turnstile-enabled config 2 passed |
+| 3 — proxy-aware daily vote cap | 60 passed, 1 skipped | Exit 0 | Exit 0 | 1 passed | 39 passed |
+| 4 — separate metric sources | 60 passed, 1 skipped | Exit 0 | Exit 0 | 1 passed | 39 passed. The first full attempt had 3 failures because its admin assertion expected populated metrics while the E2E API URL is deliberately unset; after changing the assertion to test the source labels, a focused admin test passed and the full rerun passed. |
+| 5 — docs and repository hygiene | 60 passed, 1 skipped | Exit 0 | Exit 0 | 1 passed | 39 passed |
+
+Additional Phase 5 checks:
+
+| Command | Observed result |
+| --- | --- |
+| `API_INTERNAL_URL=https://127.0.0.1:8999 NEXT_PUBLIC_APP_URL=https://heardit.invalid npm run build` (PowerShell environment assignment equivalent) | Exit 0 on Next.js 15.5.28. `/admin` is dynamic and `/` is static with five-minute revalidation. Next.js reports that the Edge runtime disables static generation for one route. The placeholder API origin was used; this does not verify a deployment. |
+| `uv run --directory apps/api pytest -rs` | 60 passed, 1 skipped. Skip reason: `Set HEARDIT_MONGO_TEST_URI to run the isolated real-Mongo integration check.` |
+| `npm audit` | Exit 1: 5 high-severity development dependency findings in the `braces` chain. The registry reports `braces@3.0.3`, still in the affected range; `npm audit fix --dry-run` proposes a breaking `eslint-config-next@14.2.35` downgrade. No overrides were applied. |
+| `npm audit --omit=dev` | Exit 0: 0 production dependency vulnerabilities. |
+| Live Fish/AIML calls, PostHog journey, production deployment, owner-run demo generator/smoke/curl | Not run by instruction. No provider request or persistent experiment write was made. |

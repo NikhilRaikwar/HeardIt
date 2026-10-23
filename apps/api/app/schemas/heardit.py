@@ -39,6 +39,7 @@ class CreateTest(BaseModel):
     direction: str = Field(min_length=1, max_length=120)
     audio_id: str = Field(min_length=1)
     option_descriptions: list[str] = Field(default_factory=list, max_length=4)
+    captcha_token: str | None = Field(default=None, max_length=4096)
 
     @field_validator('distractors')
     @classmethod
@@ -104,11 +105,19 @@ class ProductEventResponse(BaseModel):
     accepted: Literal[True]
 
 
-class AdminStatsResponse(BaseModel):
-    tests_created: int
-    tests_with_response: int
-    votes: int
+class AdminServerConfirmedStats(BaseModel):
+    tests_published: int
+    tests_with_responses: int
+    votes_accepted: int
+
+
+class AdminClientReportedStats(BaseModel):
     funnel: dict[str, int]
+
+
+class AdminStatsResponse(BaseModel):
+    server_confirmed: AdminServerConfirmedStats
+    client_reported: AdminClientReportedStats
 
 
 class AudioGenerateResponse(BaseModel):

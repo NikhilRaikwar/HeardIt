@@ -132,7 +132,7 @@ async def _verify_captcha(token: str | None, request: Request):
     if not key:
         raise AppError(503, 'captcha_unavailable', 'Listener verification is temporarily unavailable.')
     if not token:
-        raise AppError(422, 'captcha_required', 'Complete listener verification before continuing.')
+        raise AppError(403, 'captcha_required', 'Complete the security check before continuing.')
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post('https://challenges.cloudflare.com/turnstile/v0/siteverify', data={'secret':key,'response':token,'remoteip':client_ip(request)})
@@ -140,7 +140,7 @@ async def _verify_captcha(token: str | None, request: Request):
     except (httpx.HTTPError, ValueError):
         raise AppError(503, 'captcha_unavailable', 'Listener verification could not connect. Try again.')
     if not valid:
-        raise AppError(422, 'captcha_rejected', 'Listener verification failed. Try again.')
+        raise AppError(403, 'captcha_rejected', 'The security check could not be verified. Complete it again and retry.')
 
 def _db(db):
     return db
@@ -215,10 +215,12 @@ async def admin_stats(x_admin_key: str | None = Header(default=None), db=Depends
     responded_tests = await db.heardit_votes.distinct('test_id')
     funnel = {event: await db.heardit_events.count_documents({'event': event}) for event in FUNNEL_EVENTS}
     return {
-        'tests_created': await db.heardit_tests.count_documents({}),
-        'tests_with_response': len(responded_tests),
-        'votes': votes,
-        'funnel': funnel,
+        'server_confirmed': {
+            'tests_published': await db.heardit_tests.count_documents({'status': 'published'}),
+            'tests_with_responses': len(responded_tests),
+            'votes_accepted': votes,
+        },
+        'client_reported': {'funnel': funnel},
     }
 
 @router.post('/api/v1/suggestions', response_model=Suggestion)
@@ -325,7 +327,7 @@ async def create_test(
         if not re.fullmatch(r'[A-Za-z0-9._~-]{16,128}', idempotency_key):
             raise AppError(422, 'invalid_idempotency_key', 'Idempotency-Key must be 16 to 128 URL-safe characters.')
         key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
-        request_hash = hashlib.sha256(json.dumps(body.model_dump(mode='json'), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        request_hash = hashlib.sha256(json.dumps(body.model_dump(mode='json', exclude={'captcha_token'}), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         existing = await db.heardit_tests.find_one({'idempotency_key_hash':key_hash})
         if existing:
             if existing.get('publish_request_hash') != request_hash:
@@ -336,6 +338,7 @@ async def create_test(
     asset = await db.audio_assets.find_one({'id':body.audio_id})
     if not asset: raise AppError(422,'audio_required','Generate and save audio before publishing this test.')
     if asset.get('input_text') != canonical_speech_text(body.direction, body.sentence): raise AppError(422,'audio_mismatch','Generate audio for the current sentence and direction before publishing.')
+    await _verify_captcha(body.captcha_token, request)
     test_id = secrets.token_urlsafe(12)
     token = _idempotent_management_token(test_id, key_hash) if key_hash else secrets.token_urlsafe(32)
     labels = [body.intended_label.strip(), *body.distractors]
@@ -434,6 +437,7 @@ async def vote(test_id: str, body: VoteRequest, request: Request, x_management_t
     await _rate_limit(db, 'vote:ip:' + _ip_hash(request), settings.vote_ip_minute, 60)
     await _rate_limit(db, 'vote:test:' + test_id, settings.vote_test_minute, 60)
     await _rate_limit(db, 'vote:test:daily:' + test_id, settings.votes_per_test_daily_cap, 86400)
+    await _rate_limit(db, 'vote:ip:test:daily:' + test_id + ':' + _ip_hash(request), settings.votes_per_ip_per_test_daily, 86400)
     test = await db.heardit_tests.find_one({'id':test_id,'status':'published'})
     if not test: raise AppError(404,'test_not_found','This listening test could not be found.')
     if x_management_token and secrets.compare_digest(hashlib.sha256(x_management_token.encode()).hexdigest(), test['creator_management_token_hash']): raise AppError(403,'creator_preview','Creator previews cannot submit listener votes.')

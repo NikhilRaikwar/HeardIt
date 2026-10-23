@@ -620,20 +620,8 @@
   },
   "components": {
     "schemas": {
-      "AdminStatsResponse": {
+      "AdminClientReportedStats": {
         "properties": {
-          "tests_created": {
-            "type": "integer",
-            "title": "Tests Created"
-          },
-          "tests_with_response": {
-            "type": "integer",
-            "title": "Tests With Response"
-          },
-          "votes": {
-            "type": "integer",
-            "title": "Votes"
-          },
           "funnel": {
             "additionalProperties": {
               "type": "integer"
@@ -644,10 +632,46 @@
         },
         "type": "object",
         "required": [
-          "tests_created",
-          "tests_with_response",
-          "votes",
           "funnel"
+        ],
+        "title": "AdminClientReportedStats"
+      },
+      "AdminServerConfirmedStats": {
+        "properties": {
+          "tests_published": {
+            "type": "integer",
+            "title": "Tests Published"
+          },
+          "tests_with_responses": {
+            "type": "integer",
+            "title": "Tests With Responses"
+          },
+          "votes_accepted": {
+            "type": "integer",
+            "title": "Votes Accepted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tests_published",
+          "tests_with_responses",
+          "votes_accepted"
+        ],
+        "title": "AdminServerConfirmedStats"
+      },
+      "AdminStatsResponse": {
+        "properties": {
+          "server_confirmed": {
+            "$ref": "#/components/schemas/AdminServerConfirmedStats"
+          },
+          "client_reported": {
+            "$ref": "#/components/schemas/AdminClientReportedStats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "server_confirmed",
+          "client_reported"
         ],
         "title": "AdminStatsResponse"
       },
@@ -797,6 +821,18 @@
             "type": "array",
             "maxItems": 4,
             "title": "Option Descriptions"
+          },
+          "captcha_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captcha Token"
           }
         },
         "additionalProperties": false,

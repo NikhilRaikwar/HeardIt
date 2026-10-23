@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, AudioLines, Check, ClipboardCheck, Copy, FileTex
 import { track } from "@/components/heardit";
 import { hearditApi } from "@/lib/heardit-api";
 import type { components } from "@/lib/api-schema";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 
 type OptionDraft = { label: string; description: string };
 type AudioAsset = components["schemas"]["AudioGenerateResponse"];
@@ -87,6 +88,9 @@ export function CreatorJourney() {
   const [notice, setNotice] = useState("");
   const [previewMode, setPreviewMode] = useState<"audio" | "text">("audio");
   const [labelsTouched, setLabelsTouched] = useState(false);
+  const [publishCaptchaToken, setPublishCaptchaToken] = useState("");
+  const [captchaWidgetVersion, setCaptchaWidgetVersion] = useState(0);
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
   useEffect(() => {
     try {
@@ -154,6 +158,7 @@ export function CreatorJourney() {
 
   async function publish() {
     if (!draft.audio) { setError("Generate and save audio before publishing."); return; }
+    if (turnstileSiteKey && !publishCaptchaToken) { setError("Complete the security check before publishing."); return; }
     setBusy("publish"); setError("");
     try {
       const body = {
@@ -170,14 +175,21 @@ export function CreatorJourney() {
         publishAttempt.current = { fingerprint, key };
         sessionStorage.setItem("heardit-publish-attempt-v1", JSON.stringify(publishAttempt.current));
       }
-      const result = await hearditApi.publishTest(body, publishAttempt.current.key);
+      const result = await hearditApi.publishTest({ ...body, ...(turnstileSiteKey ? { captcha_token: publishCaptchaToken } : {}) }, publishAttempt.current.key);
       localStorage.setItem(`heardit-owner-${result.id}`, result.management_token);
       localStorage.setItem(`heardit-owner-id-${result.id}`, "1");
       localStorage.removeItem(DRAFT_KEY);
       sessionStorage.removeItem("heardit-publish-attempt-v1");
       track("test_published", { test_id: result.id });
       router.push(`/created/${result.id}`);
-    } catch (reason) { setError((reason as Error).message); }
+    } catch (reason) {
+      const message = (reason as Error).message;
+      setError(message);
+      if (turnstileSiteKey && /security check|verification/i.test(message)) {
+        setPublishCaptchaToken("");
+        setCaptchaWidgetVersion(version => version + 1);
+      }
+    }
     finally { setBusy(""); }
   }
 
@@ -214,7 +226,8 @@ export function CreatorJourney() {
         <div className="hj-review-row"><div><span>Fish direction</span><p className="hj-direction-review">{draft.direction}</p></div><button type="button" onClick={() => update({ step: 1 })}>Edit</button></div>
         {draft.audio && <div className="hj-review-audio"><span>VOICE PREVIEW</span><AudioPreview audio={draft.audio}/><small>{draft.audio.model} · {draft.audio.cached ? "Cached audio" : "Generated audio"}</small></div>}
         {error && <div className="hi-error" role="alert">{error}</div>}
-        <button className="hi-button hj-publish-button" type="button" onClick={() => void publish()} disabled={!draft.audio || !uniqueLabels || !!busy}>{busy === "publish" ? <><LoaderCircle className="hi-spin" size={16}/>Publishing your test…</> : <>Publish test <ArrowRight size={16}/></>}</button>
+        {turnstileSiteKey && <TurnstileWidget key={captchaWidgetVersion} siteKey={turnstileSiteKey} onToken={setPublishCaptchaToken} onError={setError}/>}
+        <button className="hi-button hj-publish-button" type="button" onClick={() => void publish()} disabled={!draft.audio || !uniqueLabels || !!busy || (!!turnstileSiteKey && !publishCaptchaToken)}>{busy === "publish" ? <><LoaderCircle className="hi-spin" size={16}/>Publishing your test…</> : <>Publish test <ArrowRight size={16}/></>}</button>
       </section><aside className="hj-review-aside"><ListenerPreview draft={draft} audio={draft.audio} mode={previewMode} onMode={setPreviewMode}/><div className="hj-how-it-works"><b>How this works</b><p><Check size={14}/>Listeners are randomly assigned to audio or text.</p><p><Check size={14}/>They choose one of the same four meanings.</p><p><Check size={14}/>You see both groups after responses arrive.</p></div></aside></div>}
     </main>
   </div>;

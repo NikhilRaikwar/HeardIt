@@ -232,18 +232,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** AdminStatsResponse */
-        AdminStatsResponse: {
-            /** Tests Created */
-            tests_created: number;
-            /** Tests With Response */
-            tests_with_response: number;
-            /** Votes */
-            votes: number;
+        /** AdminClientReportedStats */
+        AdminClientReportedStats: {
             /** Funnel */
             funnel: {
                 [key: string]: number;
             };
+        };
+        /** AdminServerConfirmedStats */
+        AdminServerConfirmedStats: {
+            /** Tests Published */
+            tests_published: number;
+            /** Tests With Responses */
+            tests_with_responses: number;
+            /** Votes Accepted */
+            votes_accepted: number;
+        };
+        /** AdminStatsResponse */
+        AdminStatsResponse: {
+            server_confirmed: components["schemas"]["AdminServerConfirmedStats"];
+            client_reported: components["schemas"]["AdminClientReportedStats"];
         };
         /** AssignmentRequest */
         AssignmentRequest: {
@@ -295,6 +303,8 @@ export interface components {
             audio_id: string;
             /** Option Descriptions */
             option_descriptions?: string[];
+            /** Captcha Token */
+            captcha_token?: string | null;
         };
         /** CreatorTestResponse */
         CreatorTestResponse: {

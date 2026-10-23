@@ -56,10 +56,10 @@ export const hearditApi = {
       headers: { "x-management-token": token },
     })),
 
-  assignment: (id: string, participantId: string) =>
+  assignment: (id: string, participantId: string, captchaToken?: string) =>
     jsonRequest(client.POST("/api/v1/tests/{test_id}/assignment", {
       params: { path: { test_id: id } },
-      body: { participant_id: participantId },
+      body: { participant_id: participantId, ...(captchaToken ? { captcha_token: captchaToken } : {}) },
     })),
 
   publicTest: (id: string, participantId: string, assignmentToken: string) =>

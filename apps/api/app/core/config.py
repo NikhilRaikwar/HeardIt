@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     vote_test_minute: int = Field(120, ge=1, alias='HEARDIT_VOTE_TEST_MINUTE')
     tests_daily_cap: int = Field(500, ge=1, alias='HEARDIT_TESTS_DAILY_CAP')
     votes_per_test_daily_cap: int = Field(10000, ge=1, alias='HEARDIT_VOTES_PER_TEST_DAILY_CAP')
+    votes_per_ip_per_test_daily: int = Field(20, ge=1, alias='HEARDIT_VOTES_PER_IP_PER_TEST_DAILY')
     captcha_enabled: bool = Field(False, alias='HEARDIT_CAPTCHA_ENABLED')
     turnstile_secret: SecretStr = Field(SecretStr(''), alias='HEARDIT_TURNSTILE_SECRET')
     admin_key: SecretStr = Field(SecretStr(''), alias='ADMIN_KEY')

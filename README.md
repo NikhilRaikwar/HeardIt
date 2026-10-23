@@ -25,6 +25,13 @@
   <a href="#how-it-works">How it works</a> · <a href="#architecture">Architecture</a> · <a href="#run-locally">Run locally</a> · <a href="#configuration">Configuration</a>
 </p>
 
+## Why this exists for Fish Audio
+
+HeardIt asks whether listeners follow the script's intended meaning or the delivery they hear.
+It uses Fish Audio `s2.1-pro-free` to synthesize creator-approved voice directions for a randomized listening experiment.
+Demo video: TODO(real-data) · Live: [heardit-six.vercel.app](https://heardit-six.vercel.app/)
+This is an exploratory interpretation test, not a claim about universal voice quality.
+
 ## The product
 
 A creator writes one short sentence, chooses the meaning they intend, and supplies three plausible alternatives. HeardIt can ask AIML for editable suggestions, then sends the creator-approved direction to Fish Audio to synthesize an MP3.
@@ -80,7 +87,7 @@ The Next.js app proxies API requests to FastAPI. Provider credentials stay on th
 - Mongo-backed per-IP and per-test write limits and daily publishing/voting caps constrain bursts. Rotating browser IDs, clearing storage, VPNs and distributed clients can still create additional participants. These controls are basic abuse prevention, not proof of unique humans.
 - Forwarded IP headers are ignored unless `HEARDIT_TRUST_PROXY=true`. Enable that setting only behind a controlled proxy that overwrites client-supplied forwarding headers; keep the backend inaccessible through an untrusted forwarding path. An optional CAPTCHA hook is disabled by default.
 - Creators opening their own listener link see a labelled, read-only preview; it does not create a listener assignment or submit a vote.
-- Results are calculated in Python. Empty groups show insufficient data, and results under 20 total responses are marked preliminary.
+- MongoDB aggregation computes answer counts; Python computes Wilson 95% intervals from those aggregates. Empty groups show insufficient data, and results under 20 total responses are marked preliminary.
 - Positive voice lift is presented as a sample difference, not proof of statistical significance or general model quality.
 - Fish audio is cached by synthesis inputs. The landing demo stays in setup state until a genuine sample MP3 is configured.
 - Product events exclude sentence text, voice directions, selected labels, participant IDs, management tokens, and assignment tokens. MongoDB retains events for up to 180 days; PostHog is optional and its project retention follows the configured account.
@@ -127,28 +134,37 @@ The FastAPI server reads private provider and database credentials. Never use `N
 | `AIML_MODEL` | FastAPI | AIML model available to your account. |
 | `ADMIN_KEY` | Next.js and FastAPI | Optional matching random key of at least 32 characters for the private admin page and metrics endpoint. Leave unset to disable `/admin`. |
 | `HEARDIT_ALLOWED_ORIGINS` | FastAPI | Comma-separated allowed frontend origins. |
+| `HEARDIT_TRUST_PROXY` | FastAPI | Defaults to `false`. Trust `X-Forwarded-For` only when the FastAPI ingress is known to sanitize it; see [deployment proxy guidance](docs/DEPLOYMENT.md). |
+| `HEARDIT_VOTES_PER_IP_PER_TEST_DAILY` | FastAPI | Daily vote cap per hashed client IP and test. Defaults to `20`; IP-based limits can be bypassed by rotating networks. |
 | `API_INTERNAL_URL` | Next.js server | FastAPI base URL; local default is `http://127.0.0.1:8000`. |
 | `NEXT_PUBLIC_APP_URL` | Next.js | Public site origin used for canonical metadata and share links. |
 | `NEXT_PUBLIC_POSTHOG_KEY` | Browser | Optional PostHog project key. |
 | `NEXT_PUBLIC_POSTHOG_HOST` | Browser | Optional PostHog host. |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Browser | Optional Cloudflare Turnstile site key. Set together with `HEARDIT_CAPTCHA_ENABLED=true` and `HEARDIT_TURNSTILE_SECRET` on FastAPI to require checks before assignment and publishing. |
 
 See `.env.example` for a complete template. `ADMIN_KEY` must be the same value on the frontend and backend, and should be generated as a random value with at least 32 characters.
 
-### Prepare the landing demo clips
+For the two-project Vercel rewrite topology and an end-to-end forwarded-header spoof check, see [deployment proxy guidance](docs/DEPLOYMENT.md).
 
-The repository does not include fabricated or placeholder audio. With the FastAPI service running and configured with a real Fish Audio key, generate the four cached examples and write their asset IDs to `public/demo-audio.json`:
+Turnstile is off by default. To enable it, configure the public site key in Next.js, set `HEARDIT_CAPTCHA_ENABLED=true` and the private `HEARDIT_TURNSTILE_SECRET` in FastAPI, then redeploy both services. The listener check runs before condition assignment; publishing requires a separate fresh check.
+
+### Demo clips
+
+With a real `FISH_API_KEY` in your environment or repository `.env`, generate four real Fish Audio MP3s directly from Fish Audio:
 
 ```powershell
 uv run --directory apps/api python ../../scripts/seed-demo.py
 ```
 
-The landing page checks that the manifest contains all four expected labels and verifies each MP3 with a one-byte range request before showing the interactive demo. If any clip is missing, the demo stays clearly marked as unavailable.
+The command writes `public/demo/{curious,annoyed,hurt,playful}.mp3` and `public/demo/manifest.json`. It does not need MongoDB or a running API. Review the generated clips, then commit the MP3s and manifest. The landing server component validates the manifest and local MP3 files at build/render time, and the browser plays those static files directly. If the files are absent, development shows a setup note and production does not claim that samples are ready.
 
 ### Private product metrics
 
-Set the same `ADMIN_KEY` in the Vercel frontend project and the FastAPI deployment. Visit `/admin`, enter the key once, and the page reads test, response, vote, and funnel counts from MongoDB. It does not use PostHog as its source of truth. With the key unset, `/admin` returns a not-found page.
+Set the same `ADMIN_KEY` in the Vercel frontend project and the FastAPI deployment. Visit `/admin` and enter the key once. The page separates server-confirmed published-test and accepted-vote counts derived from MongoDB collections from client-reported funnel events. Client events can be missing or spoofed, so they are directional telemetry and never change the server-confirmed counts. The dashboard does not use PostHog as its source of truth. With the key unset, `/admin` returns a not-found page.
 
 The tracked funnel is `create_started → voice_generation_completed → test_published → share_clicked → test_opened → vote_submitted`. Product events are filtered in the browser and again in FastAPI; neither store receives sentence text, voice directions, tokens, participant identifiers, or answer labels.
+
+The `/admin` page labels MongoDB collection totals as **server-confirmed** and browser funnel counts as **client-reported**. Client events may be missing or fabricated and do not change published-test or accepted-vote counts. For a blank results-reporting worksheet and export notes, see [docs/RESULTS.md](docs/RESULTS.md).
 
 Vercel Analytics does not need an environment variable. Enable **Analytics** in the Vercel project's dashboard and redeploy to start collecting page views.
 

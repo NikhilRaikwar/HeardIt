@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, AudioLines, BarChart3, Check, Clock3, Copy, FileText, Headphones, LoaderCircle, Menu, Pause, PencilLine, Play, Sparkles, UsersRound, Volume2, VolumeX, X, Zap } from "lucide-react";
 import { hearditApi } from "@/lib/heardit-api";
 import type { components } from "@/lib/api-schema";
+import type { DemoSample } from "@/lib/demo-audio";
 import { trackProductEvent } from "@/lib/analytics";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 
 type PublicStats=components["schemas"]["PublicProductStats"];
 type PublicTestResponse=components["schemas"]["PublicTestResponse"];
@@ -15,7 +17,6 @@ function Nav(){return <header className="hi-nav"><Link href="/" className="hi-wo
 
 const demoSentence = "I thought you said you'd be here by now.";
 const demoChoices = ["Curious", "Annoyed", "Hurt", "Playful"];
-type DemoSample = {label:string;direction:string;audio_id:string;url:string};
 const demoIntended = "Curious";
 let activeDemoAudio:HTMLAudioElement|null=null;
 const formatDuration = (seconds:number) => {
@@ -33,7 +34,6 @@ function EmotionIllustration({demoSamples}:{demoSamples:DemoSample[]}){
  const audioRefs=useRef<Array<HTMLAudioElement|null>>([]);
  const [playing,setPlaying]=useState<string|null>(null);
  const [audioError,setAudioError]=useState<string|null>(null);
- const configuredSamples=demoSamples.filter(sample=>sample.url).length;
  async function toggleSample(index:number){
   const audio=audioRefs.current[index], sample=demoSamples[index];
   if(!audio||!sample.url)return;
@@ -42,7 +42,8 @@ function EmotionIllustration({demoSamples}:{demoSamples:DemoSample[]}){
   setAudioError(null);
   try{await audio.play();}catch{setAudioError(sample.label);}
  }
- return <div className="hi-hero-art" aria-label="Play four Fish Audio interpretations of the same sentence"><div className="hi-art-glow"/><svg className="hi-art-connectors" viewBox="0 0 540 390" aria-hidden="true"><path d="M145 95 C190 112 178 140 214 157"/><path d="M395 107 C352 119 376 145 330 158"/><path d="M132 296 C168 270 188 257 218 239"/><path d="M414 288 C374 269 366 255 331 240"/></svg>{demoSamples.map((sample,index)=><button key={sample.label} type="button" className={`hi-emotion-card hi-emotion-${sample.label.toLowerCase()} ${playing===sample.label?"is-playing":""}`} onClick={()=>void toggleSample(index)} disabled={!sample.url} aria-label={`${playing===sample.label?"Pause":"Play"} ${sample.label.toLowerCase()} Fish Audio sample`} title={sample.url?`Play ${sample.label} sample`: `${sample.label} sample audio is not configured`}><audio ref={node=>{audioRefs.current[index]=node}} src={sample.url||undefined} preload="none" onPlay={()=>{activeDemoAudio=audioRefs.current[index];setAudioError(null);setPlaying(sample.label);track("audio_played",{surface:"hero_sample",emotion:sample.label.toLowerCase()})}} onPause={()=>{setPlaying(current=>current===sample.label?null:current);if(activeDemoAudio===audioRefs.current[index])activeDemoAudio=null}} onEnded={()=>setPlaying(null)} onError={()=>{if(activeDemoAudio===audioRefs.current[index])setAudioError(sample.label)}}/><p>“I thought you said<br/>you’d be here by now.”</p><span>{sample.label.toUpperCase()}</span><i aria-hidden="true">{playing===sample.label?<Pause size={13} fill="currentColor"/>:<Play size={13} fill="currentColor"/>}</i></button>)}<div className="hi-art-wave" aria-hidden="true">{[10,18,27,14,36,20,50,29,66,35,80,45,59,27,42,19,32,13].map((height,index)=><i key={index} style={{height:String(height)+"px"}}/>)}</div>{audioError&&<span className="hi-art-audio-status" role="status">The {audioError} sample could not be played. Try again.</span>}{configuredSamples<4&&<span className="hi-art-samples-status">{configuredSamples} of 4 Fish Audio samples ready</span>}</div>
+ if(demoSamples.length!==4)return null;
+ return <div className="hi-hero-art" aria-label="Play four Fish Audio interpretations of the same sentence"><div className="hi-art-glow"/><svg className="hi-art-connectors" viewBox="0 0 540 390" aria-hidden="true"><path d="M145 95 C190 112 178 140 214 157"/><path d="M395 107 C352 119 376 145 330 158"/><path d="M132 296 C168 270 188 257 218 239"/><path d="M414 288 C374 269 366 255 331 240"/></svg>{demoSamples.map((sample,index)=><button key={sample.label} type="button" className={`hi-emotion-card hi-emotion-${sample.label.toLowerCase()} ${playing===sample.label?"is-playing":""}`} onClick={()=>void toggleSample(index)} aria-label={`${playing===sample.label?"Pause":"Play"} ${sample.label.toLowerCase()} Fish Audio sample`} title={`Play ${sample.label} Fish Audio sample`}><audio ref={node=>{audioRefs.current[index]=node}} src={sample.url} preload="none" onPlay={()=>{activeDemoAudio=audioRefs.current[index];setAudioError(null);setPlaying(sample.label);track("audio_played",{surface:"hero_sample",emotion:sample.label.toLowerCase()})}} onPause={()=>{setPlaying(current=>current===sample.label?null:current);if(activeDemoAudio===audioRefs.current[index])activeDemoAudio=null}} onEnded={()=>setPlaying(null)} onError={()=>{if(activeDemoAudio===audioRefs.current[index])setAudioError(sample.label)}}/><p>“{sample.text}”</p><span>{sample.label.toUpperCase()}</span><i aria-hidden="true">{playing===sample.label?<Pause size={13} fill="currentColor"/>:<Play size={13} fill="currentColor"/>}</i></button>)}<div className="hi-art-wave" aria-hidden="true">{[10,18,27,14,36,20,50,29,66,35,80,45,59,27,42,19,32,13].map((height,index)=><i key={index} style={{height:String(height)+"px"}}/>)}</div>{audioError&&<span className="hi-art-audio-status" role="status">The {audioError} sample could not be played. Try again.</span>}</div>
 }
 
 function DemoSection({demoSamples}:{demoSamples:DemoSample[]}){
@@ -66,6 +67,7 @@ function DemoSection({demoSamples}:{demoSamples:DemoSample[]}){
  function toggleMute(){const audio=audioRef.current;if(!audio)return;audio.muted=!audio.muted;setMuted(audio.muted);}
  function seek(value:number){const audio=audioRef.current;if(audio&&Number.isFinite(duration))audio.currentTime=value;}
  const reveal=Boolean(guess&&demoReady);
+ if(!demoReady)return <section id="examples" className="hi-demo-panel hi-demo-not-configured" aria-labelledby="hi-demo-heading"><div className="hi-demo-panel-head"><div><span className="hi-small-label">THE IDEA</span><h2 id="hi-demo-heading">Same sentence. Different direction.</h2></div></div><p>{process.env.NODE_ENV==="development"?"Demo clips are generated on first run.":"The interactive audio example is unavailable."}</p><Link href="/create" className="hi-button hi-demo-cta" onClick={()=>track("create_started",{surface:"demo_setup"})}>Create a listening test <ArrowRight size={17}/></Link></section>;
  return <section id="examples" className="hi-demo-panel" aria-labelledby="hi-demo-heading">
   <div className="hi-demo-panel-orbit" aria-hidden="true"/>
   <div className="hi-demo-panel-head"><div><span className="hi-small-label">THE IDEA</span><h2 id="hi-demo-heading">Same sentence. Different direction.</h2></div><span className="hi-demo-number">01 / 04</span></div>
@@ -140,9 +142,10 @@ export function Creator(){
  </section><aside className="hi-live-preview" aria-label="Live test preview"><div className="hi-preview-head"><div><b>LIVE PREVIEW</b><span>How your test will appear to listeners</span></div><div className="hi-preview-tabs" role="group" aria-label="Preview condition"><button type="button" className={previewCondition==="audio"?"is-active":""} aria-pressed={previewCondition==="audio"} onClick={()=>{setPreviewCondition("audio");setPreviewChoice("")}}><Headphones size={15}/>Audio test</button><button type="button" className={previewCondition==="text"?"is-active":""} aria-pressed={previewCondition==="text"} onClick={()=>{setPreviewCondition("text");setPreviewChoice("")}}><FileText size={15}/>Text test</button></div></div><div className="hi-preview-stage"><div className="hi-preview-phone"><div className="hi-phone-top"><span>1 / 1</span><span className="hi-phone-dot"/></div><h2>{previewCondition==="audio"?"Listen and choose what you think it means.":"Read the words and choose what you think they mean."}</h2>{previewCondition==="audio"?<div className="hi-phone-audio">{audio?<audio controls preload="metadata" src={`/api/v1/audio/${audio}`} aria-label="Preview generated Fish Audio clip"/>:<div className="hi-phone-audio-empty"><span className="hi-phone-audio-icon"><Headphones size={16}/></span><span>Generate a voice clip to preview it here.</span></div>}</div>:<blockquote className="hi-phone-sentence">{sentence.trim()||"Your sentence will appear here."}</blockquote>}<div className="hi-preview-options">{labels.map((label,index)=><button type="button" key={`${index}-${label}`} className={previewChoice===label?"is-selected":""} onClick={()=>setPreviewChoice(label)}><span>{previewChoice===label?<Check size={12}/>:null}</span>{label}</button>)}</div><button className="hi-phone-submit" type="button" disabled>Submit answer</button><p className="hi-phone-note">Preview only. These choices don’t count as responses.</p></div></div><div className="hi-preview-footer"><span><UsersRound size={16}/></span><div><b>What listeners will see</b><p>Each visitor is assigned to hear the voice or read the same words. They’ll choose one meaning, then see the result.</p></div></div></aside></div><p className="hi-privacy">Your voice direction stays private from listeners until after they vote.</p></main></div>
 }
 
-export function Listener({id}:{id:string}){const [data,setData]=useState<TestData|null>(null);const[condition,setCondition]=useState<"audio"|"text"|null>(null);const[selected,setSelected]=useState("");const[revealed,setRevealed]=useState("");const[error,setError]=useState("");const[loading,setLoading]=useState(true);const[creatorPreview,setCreatorPreview]=useState(false);const[assignmentToken,setAssignmentToken]=useState("");const selectedLabel=data?.options?.find(option=>option.id===selected)?.label||selected;
+export function Listener({id}:{id:string}){const [data,setData]=useState<TestData|null>(null);const[condition,setCondition]=useState<"audio"|"text"|null>(null);const[selected,setSelected]=useState("");const[revealed,setRevealed]=useState("");const[error,setError]=useState("");const[loading,setLoading]=useState(true);const[creatorPreview,setCreatorPreview]=useState(false);const[assignmentToken,setAssignmentToken]=useState("");const[captchaToken,setCaptchaToken]=useState("");const[captchaRetry,setCaptchaRetry]=useState(0);const turnstileSiteKey=process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY||"";const captchaEnabled=Boolean(turnstileSiteKey);const selectedLabel=data?.options?.find(option=>option.id===selected)?.label||selected;
  useEffect(()=>{
   let alive=true;
+  setLoading(true);
   (async()=>{try{
    const owner=localStorage.getItem(`heardit-owner-${id}`);
    if(owner){
@@ -152,8 +155,9 @@ export function Listener({id}:{id:string}){const [data,setData]=useState<TestDat
     setCondition("audio");setCreatorPreview(true);
     return;
    }
+   if(captchaEnabled&&!captchaToken){setLoading(false);return;}
    const p=participant();
-   const assignment=await hearditApi.assignment(id,p);
+   const assignment=await hearditApi.assignment(id,p,captchaEnabled?captchaToken:undefined);
    if(!assignment.assignment_token)throw new Error("This listener assignment is incomplete. Reopen the test to try again.");
    const test=await hearditApi.publicTest(id,p,assignment.assignment_token);
    if(!alive)return;
@@ -161,10 +165,11 @@ export function Listener({id}:{id:string}){const [data,setData]=useState<TestDat
    track("test_opened",{test_id:id});
   }catch(e){if(alive)setError((e as Error).message)}finally{if(alive)setLoading(false)}})();
   return()=>{alive=false};
- },[id]);
+ },[id,captchaEnabled,captchaToken]);
  async function submit(){if(!selected||creatorPreview||!assignmentToken)return;setError("");try{const selectedOption=data?.options?.find(option=>option.id===selected);const r=await hearditApi.vote(id,{participant_id:participant(),assignment_token:assignmentToken,...(selectedOption?{selected_option_id:selectedOption.id}:{selected_label:selected})});setRevealed(r.intended_label);track("vote_submitted",{test_id:id,condition})}catch(e){setError((e as Error).message)}}
  if(loading)return <><Nav/><main className="hi-listen"><div className="hi-loading"><LoaderCircle className="hi-spin"/>Loading the listening test</div></main></>;
- if(error&&!data)return <><Nav/><main className="hi-listen"><div className="hi-error">{error}</div></main></>;
+ if(captchaEnabled&&!creatorPreview&&!assignmentToken&&!data)return <><Nav/><main className="hi-listen"><div className="hi-test-card hi-captcha-gate"><span className="hi-small-label">LISTENER VERIFICATION</span><h1>One quick security check.</h1><p className="hi-instruction">Complete the check before your test assignment is created.</p><TurnstileWidget key={captchaRetry} siteKey={turnstileSiteKey} onToken={token=>{setCaptchaToken(token);setError("")}} onError={setError}/>{error&&<div className="hi-error" role="alert">{error}</div>}{captchaToken&&error&&<button className="hi-quiet-button" type="button" onClick={()=>{setCaptchaToken("");setError("");setCaptchaRetry(value=>value+1)}}>Try verification again</button>}</div></main></>;
+ if(error&&!data)return <><Nav/><main className="hi-listen"><div className="hi-error" role="alert">{error}</div></main></>;
  return <><Nav/><main className="hi-listen"><div className="hi-listen-top"><span className="hi-small-label">{creatorPreview?"CREATOR PREVIEW":"A QUICK LISTENING TEST"}</span><span>{revealed?"COMPLETE":"01 QUESTION"}</span></div><div className="hi-test-card">{creatorPreview&&<p className="hi-preliminary" role="status">Creator preview. No listener assignment or vote is recorded here.</p>}<h1>{creatorPreview?"Preview your listening test":"What do you hear?"}</h1><p className="hi-instruction">{condition==="audio"?"Listen to the voice, then choose the interpretation that fits best.":"Read the sentence, then choose the interpretation that fits best."}</p>{condition==="audio"?<div className="hi-listen-audio"><div className="hi-audio-icon"><Volume2 size={20}/></div><audio controls preload="metadata" src={data?.audio_url || undefined} onPlay={()=>track("audio_played",{test_id:id})} onError={()=>setError("The audio clip could not be loaded. Refresh the test and try again.")}/><span>Listen once or as often as you like</span></div>:<blockquote className="hi-text-prompt">“{data?.sentence}”</blockquote>}<div className="hi-options" role="radiogroup" aria-label="Choose the interpretation">{((data?.options?.map(option=>({key:option.id,label:option.label}))||data?.labels.map(label=>({key:label,label})))??[]).map(({key,label},i)=><button key={key} className={`hi-option ${selected===key?"selected":""}`} onClick={()=>setSelected(key)} disabled={!!revealed||creatorPreview}><span className="hi-option-key">{String.fromCharCode(65+i)}</span><span>{label}</span>{selected===key&&<Check size={17}/>}</button>)}</div>{creatorPreview?<Link className="hi-button hi-submit" href={`/r/${id}`}>View private results <ArrowRight size={16}/></Link>:!revealed?<button className="hi-button hi-submit" disabled={!selected} onClick={submit}>Submit answer <ArrowRight size={16}/></button>:<div className="hi-reveal"><span className="hi-reveal-icon"><Check size={17}/></span><div><span>You heard</span><b>{selectedLabel}</b><span>The creator intended</span><b>{revealed}</b><p>Your response has been saved. Different listeners may hear the same performance differently.</p><div className="hi-reveal-actions"><button onClick={()=>{void navigator.clipboard?.writeText(location.href).catch(()=>undefined);track("share_clicked",{surface:"listener",test_id:id})}}><Copy size={13}/>Share test</button></div></div></div>}{error&&<div className="hi-error" role="alert">{error}</div>}</div><div className="hi-listen-bottom"><Link href="/">What is HeardIt?</Link><Link href="/create">Make your own test <ArrowRight size={13}/></Link></div></main></>}
 
 type Group=components["schemas"]["ResultGroup"];

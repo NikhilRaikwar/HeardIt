@@ -1,6 +1,8 @@
 import { Landing } from "@/components/heardit";
-import { loadDemoSamples } from "@/lib/demo-audio";
+import { loadDemoSamples, parseDemoManifest } from "@/lib/demo-audio";
 import type { components } from "@/lib/api-schema";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 type PublicStats = components["schemas"]["PublicProductStats"];
 
@@ -92,8 +94,20 @@ const structuredData = [
   },
 ];
 
-export default async function Page() {
-  const [publicStats, demoSamples] = await Promise.all([getPublicStats(), loadDemoSamples()]);
+export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const testState = process.env.HEARDIT_E2E_DEMO_TESTING === "1"
+    ? (await searchParams).demo_fixture
+    : undefined;
+  const [publicStats, demoSamples] = await Promise.all([
+    getPublicStats(),
+    testState === "missing"
+      ? Promise.resolve([])
+      : testState === "present"
+        ? readFile(join(process.cwd(), "e2e", "fixtures", "demo-manifest.json"), "utf8")
+          .then(value => parseDemoManifest(JSON.parse(value)).map(sample => ({ ...sample, url: `/demo/${sample.id}.mp3` })))
+          .catch(() => [])
+        : loadDemoSamples(),
+  ]);
   return <>
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />
     <Landing publicStats={publicStats} demoSamples={demoSamples} />
