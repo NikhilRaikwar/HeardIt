@@ -120,6 +120,31 @@ async def test_daily_publish_and_per_test_vote_caps(client, db, monkeypatch):
         assert response.status_code == (201 if index == 0 else 429)
 
 
+@pytest.mark.asyncio
+async def test_daily_vote_cap_is_per_hashed_ip_and_isolated_by_test(db, monkeypatch):
+    monkeypatch.setattr(experiments.settings, 'votes_per_ip_per_test_daily', 1)
+    second_test = dict(db.heardit_tests.rows[0], id='test-2', creator_management_token_hash='other-hash')
+    db.heardit_tests.rows.append(second_test)
+
+    async def submit(test_id, participant):
+        assigned = await experiments.assignment(
+            test_id, experiments.AssignmentRequest(participant_id=participant),
+            request(ip='198.51.100.24'), x_management_token=None, db=db,
+        )
+        body = experiments.VoteRequest(
+            participant_id=participant, assignment_token=assigned['assignment_token'],
+            selected_label='Sarcastic',
+        )
+        return await experiments.vote(test_id, body, request(ip='198.51.100.24'), x_management_token=None, db=db)
+
+    await submit('test-1', 'a'*48)
+    with pytest.raises(experiments.AppError) as capped:
+        await submit('test-1', 'b'*48)
+    assert capped.value.status == 429 and capped.value.code == 'rate_limited'
+    isolated = await submit('test-2', 'c'*48)
+    assert isolated['submitted'] is True
+
+
 def test_untrusted_forwarded_headers_cannot_rotate_ip(monkeypatch):
     monkeypatch.setattr(experiments.settings, 'trust_proxy', False)
     assert experiments.client_ip(request([('X-Forwarded-For','203.0.113.5')])) == '192.0.2.1'

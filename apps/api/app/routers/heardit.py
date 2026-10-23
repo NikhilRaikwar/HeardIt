@@ -435,6 +435,7 @@ async def vote(test_id: str, body: VoteRequest, request: Request, x_management_t
     await _rate_limit(db, 'vote:ip:' + _ip_hash(request), settings.vote_ip_minute, 60)
     await _rate_limit(db, 'vote:test:' + test_id, settings.vote_test_minute, 60)
     await _rate_limit(db, 'vote:test:daily:' + test_id, settings.votes_per_test_daily_cap, 86400)
+    await _rate_limit(db, 'vote:ip:test:daily:' + test_id + ':' + _ip_hash(request), settings.votes_per_ip_per_test_daily, 86400)
     test = await db.heardit_tests.find_one({'id':test_id,'status':'published'})
     if not test: raise AppError(404,'test_not_found','This listening test could not be found.')
     if x_management_token and secrets.compare_digest(hashlib.sha256(x_management_token.encode()).hexdigest(), test['creator_management_token_hash']): raise AppError(403,'creator_preview','Creator previews cannot submit listener votes.')

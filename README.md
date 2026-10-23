@@ -127,6 +127,8 @@ The FastAPI server reads private provider and database credentials. Never use `N
 | `AIML_MODEL` | FastAPI | AIML model available to your account. |
 | `ADMIN_KEY` | Next.js and FastAPI | Optional matching random key of at least 32 characters for the private admin page and metrics endpoint. Leave unset to disable `/admin`. |
 | `HEARDIT_ALLOWED_ORIGINS` | FastAPI | Comma-separated allowed frontend origins. |
+| `HEARDIT_TRUST_PROXY` | FastAPI | Defaults to `false`. Trust `X-Forwarded-For` only when the FastAPI ingress is known to sanitize it; see [deployment proxy guidance](docs/DEPLOYMENT.md). |
+| `HEARDIT_VOTES_PER_IP_PER_TEST_DAILY` | FastAPI | Daily vote cap per hashed client IP and test. Defaults to `20`; IP-based limits can be bypassed by rotating networks. |
 | `API_INTERNAL_URL` | Next.js server | FastAPI base URL; local default is `http://127.0.0.1:8000`. |
 | `NEXT_PUBLIC_APP_URL` | Next.js | Public site origin used for canonical metadata and share links. |
 | `NEXT_PUBLIC_POSTHOG_KEY` | Browser | Optional PostHog project key. |
@@ -134,6 +136,8 @@ The FastAPI server reads private provider and database credentials. Never use `N
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Browser | Optional Cloudflare Turnstile site key. Set together with `HEARDIT_CAPTCHA_ENABLED=true` and `HEARDIT_TURNSTILE_SECRET` on FastAPI to require checks before assignment and publishing. |
 
 See `.env.example` for a complete template. `ADMIN_KEY` must be the same value on the frontend and backend, and should be generated as a random value with at least 32 characters.
+
+For the two-project Vercel rewrite topology and an end-to-end forwarded-header spoof check, see [deployment proxy guidance](docs/DEPLOYMENT.md).
 
 Turnstile is off by default. To enable it, configure the public site key in Next.js, set `HEARDIT_CAPTCHA_ENABLED=true` and the private `HEARDIT_TURNSTILE_SECRET` in FastAPI, then redeploy both services. The listener check runs before condition assignment; publishing requires a separate fresh check.
 
