@@ -168,3 +168,17 @@ Additional Phase 5 checks:
 | `npm audit` | Exit 1: 5 high-severity development dependency findings in the `braces` chain. The registry reports `braces@3.0.3`, still in the affected range; `npm audit fix --dry-run` proposes a breaking `eslint-config-next@14.2.35` downgrade. No overrides were applied. |
 | `npm audit --omit=dev` | Exit 0: 0 production dependency vulnerabilities. |
 | Live Fish/AIML calls, PostHog journey, production deployment, owner-run demo generator/smoke/curl | Not run by instruction. No provider request or persistent experiment write was made. |
+
+## Post-merge live verification — 2026-10-23
+
+Ran after PR #2 was merged to `main` (`b3d4a5c`). These checks supersede the earlier “not run” entries above for demo generation, the live Fish smoke, and the proxy curl check. They do not imply a new deployment of the local demo assets.
+
+| Check | Observed result |
+| --- | --- |
+| `uv run --directory apps/api python ../../scripts/seed-demo.py` | Exit 0. Genuine Fish Audio requests generated `curious.mp3`, `annoyed.mp3`, `hurt.mp3`, and `playful.mp3` with model `s2.1-pro-free`; `manifest.json` records the labels, sentence, model, and generation timestamp. The Fish key was read from local `.env` and was not printed or added to Git. |
+| Static MP3 playback in browser | Each local asset loaded with `readyState=4` and playback advanced. Browser-reported durations: Curious 2.246438s, Annoyed 1.880750s, Hurt 2.194188s, Playful 3.082375s. This verifies decoding/playback, not a subjective human review of voice quality. |
+| `HEARDIT_CONFIRM_LIVE_FISH=YES` live run of `scripts/smoke.sh` with `HEARDIT_API_URL=https://api-six-iota-fp3oos7pc0.vercel.app` | **10 steps passed**: health/Mongo, Fish configured, saved audio reference, MP3 Range response, publish, persisted assignment, blind-safe text payload, saved vote, private result count, and result persistence after a fresh request. It left one test and one vote in production MongoDB. The API origin from `.env` was a local development URL, so the live origin was explicitly supplied. |
+| Live creator/listener/results browser flow at `https://heardit-six.vercel.app` | Creator UI generated Fish audio and published a test. Isolated browser contexts received audio and text assignments; their vote requests returned HTTP 201. The private results page after reload showed **2 verification responses: 1 audio and 1 text**, both selecting Annoyed while the intended label was Curious. These are operator-generated test responses, not independent human listener data or product metrics. |
+| `docs/DEPLOYMENT.md` proxy spoof check via frontend rewrite | The first sequential run returned 61×200 because it spanned rate-limit minute windows, so it was inconclusive. A batched run completed in one window: **60×200, then 1×429** after switching the supplied `X-Forwarded-For` value. It created assignments only and no votes. |
+
+At verification time, the production landing page still showed the missing-demo state because `public/demo/` had not yet been included in a deployed build. The MP3s and manifest are committed locally on `main`; they were not pushed or deployed in this verification. A reviewer with audio input should still listen for subjective direction quality. PostHog, the deployment smoke video, and manual GitGuardian dashboard classification were not run here.
