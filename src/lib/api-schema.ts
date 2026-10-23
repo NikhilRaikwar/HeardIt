@@ -295,6 +295,8 @@ export interface components {
             audio_id: string;
             /** Option Descriptions */
             option_descriptions?: string[];
+            /** Captcha Token */
+            captcha_token?: string | null;
         };
         /** CreatorTestResponse */
         CreatorTestResponse: {

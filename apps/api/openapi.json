@@ -797,6 +797,18 @@
             "type": "array",
             "maxItems": 4,
             "title": "Option Descriptions"
+          },
+          "captcha_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captcha Token"
           }
         },
         "additionalProperties": false,

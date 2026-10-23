@@ -64,7 +64,10 @@ test("audio listener receives no sentence before voting and sees the intended re
     expect(route.request().headers()["x-assignment-token"]).toBe(assignmentToken);
     return route.fulfill({ json: { id: "test-a", condition: "audio", labels: ["Sarcastic", "Pleased", "Annoyed", "Sad"], audio_url: "/api/v1/audio/opaque-audio" } });
   });
-  await page.route("**/api/v1/tests/test-a/assignment", route => route.fulfill({ json: { condition: "audio", assignment_token: assignmentToken, creator_preview: false } }));
+  await page.route("**/api/v1/tests/test-a/assignment", route => {
+    expect(route.request().postDataJSON()).not.toHaveProperty("captcha_token");
+    return route.fulfill({ json: { condition: "audio", assignment_token: assignmentToken, creator_preview: false } });
+  });
   await page.route("**/api/v1/tests/test-a/votes", route => {
     expect(route.request().postDataJSON()).toMatchObject({ assignment_token: assignmentToken, selected_label: "Sarcastic" });
     expect(route.request().postDataJSON()).not.toHaveProperty("condition");
@@ -110,6 +113,7 @@ test("creator generates, reviews, and publishes a test through the staged journe
   await page.route("**/api/v1/tests**", route => {
     if (route.request().method() !== "POST") return route.continue();
     const headers = route.request().headers();
+    expect(route.request().postDataJSON()).not.toHaveProperty("captcha_token");
     const headerNames = Object.keys(headers).map(name => name.toLowerCase());
     expect(headerNames).toContain("idempotency-key");
     expect(Object.entries(headers).find(([name]) => name.toLowerCase() === "idempotency-key")?.[1]).toMatch(/^[A-Za-z0-9-]{16,}$/);
@@ -127,6 +131,7 @@ test("creator generates, reviews, and publishes a test through the staged journe
   await expect(page.getByText("s2.1-pro-free").first()).toBeVisible();
   await page.getByRole("button", { name: /Continue to review/ }).click();
   await expect(page.getByRole("heading", { name: "Review your test" })).toBeVisible();
+  await expect(page.locator(".hi-turnstile")).toHaveCount(0);
   if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-review-desktop.png", fullPage: true });
   const publishedResponse = page.waitForResponse(response => response.url().endsWith("/api/v1/tests") && response.request().method() === "POST");
   await page.getByRole("button", { name: /Publish test/ }).click();

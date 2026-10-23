@@ -145,14 +145,49 @@ async def test_creator_preview_never_assigns_or_votes(client, db):
 
 
 @pytest.mark.asyncio
-async def test_optional_captcha_is_off_by_default_and_enforced_only_when_enabled(client, monkeypatch):
+async def test_captcha_disabled_missing_and_successful_turnstile_flows(client, db, monkeypatch):
+    from pydantic import SecretStr
+
+    publish_body = {
+        'sentence':'I thought you would be here.', 'intended_label':'Sarcastic',
+        'distractors':['Pleased','Sad','Angry'], 'direction':'[dry]', 'audio_id':'audio-1',
+    }
     monkeypatch.setattr(experiments.settings, 'captcha_enabled', False)
     assert (await start(client))['assignment_token']
+    disabled_publish = await client.post('/api/v1/tests', json=publish_body)
+    assert disabled_publish.status_code == 201
+
     monkeypatch.setattr(experiments.settings, 'captcha_enabled', True)
-    from pydantic import SecretStr
     monkeypatch.setattr(experiments.settings, 'turnstile_secret', SecretStr('test-only-secret'))
-    response = await client.post('/api/v1/tests/test-1/assignment', json={'participant_id':'q'*48})
-    assert response.status_code == 422 and response.json()['error']['code'] == 'captcha_required'
+    missing_assignment = await client.post('/api/v1/tests/test-1/assignment', json={'participant_id':'q'*48})
+    missing_publish = await client.post('/api/v1/tests', json=publish_body)
+    for response in (missing_assignment, missing_publish):
+        assert response.status_code == 403
+        assert response.json()['error']['code'] == 'captcha_required'
+        assert 'security check' in response.json()['error']['message'].lower()
+
+    verified_tokens = []
+
+    class VerifyResponse:
+        is_success = True
+        def json(self): return {'success': True}
+
+    class FakeTurnstileClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return None
+        async def post(self, url, data):
+            assert url == 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+            assert data['secret'] == 'test-only-secret'
+            verified_tokens.append(data['response'])
+            return VerifyResponse()
+
+    monkeypatch.setattr(experiments.httpx, 'AsyncClient', FakeTurnstileClient)
+    valid_assignment = await client.post('/api/v1/tests/test-1/assignment', json={'participant_id':'r'*48,'captcha_token':'valid-assignment-token'})
+    assert valid_assignment.status_code == 200 and valid_assignment.json()['assignment_token']
+    valid_publish = await client.post('/api/v1/tests', json={**publish_body,'captcha_token':'valid-publish-token'})
+    assert valid_publish.status_code == 201
+    assert verified_tokens == ['valid-assignment-token','valid-publish-token']
 
 
 def test_production_requires_explicit_strong_signing_secret():

@@ -131,8 +131,11 @@ The FastAPI server reads private provider and database credentials. Never use `N
 | `NEXT_PUBLIC_APP_URL` | Next.js | Public site origin used for canonical metadata and share links. |
 | `NEXT_PUBLIC_POSTHOG_KEY` | Browser | Optional PostHog project key. |
 | `NEXT_PUBLIC_POSTHOG_HOST` | Browser | Optional PostHog host. |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Browser | Optional Cloudflare Turnstile site key. Set together with `HEARDIT_CAPTCHA_ENABLED=true` and `HEARDIT_TURNSTILE_SECRET` on FastAPI to require checks before assignment and publishing. |
 
 See `.env.example` for a complete template. `ADMIN_KEY` must be the same value on the frontend and backend, and should be generated as a random value with at least 32 characters.
+
+Turnstile is off by default. To enable it, configure the public site key in Next.js, set `HEARDIT_CAPTCHA_ENABLED=true` and the private `HEARDIT_TURNSTILE_SECRET` in FastAPI, then redeploy both services. The listener check runs before condition assignment; publishing requires a separate fresh check.
 
 ### Demo clips
 

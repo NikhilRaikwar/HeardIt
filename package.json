@@ -11,7 +11,7 @@
     "api:test": "uv run --directory apps/api pytest",
     "api:types": "npm run api:openapi && openapi-typescript apps/api/openapi.json --output src/lib/api-schema.ts",
     "test:analytics": "node --test src/lib/analytics-properties.test.mjs",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --workers=1 --reporter=line",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },

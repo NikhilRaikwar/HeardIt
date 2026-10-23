@@ -132,7 +132,7 @@ async def _verify_captcha(token: str | None, request: Request):
     if not key:
         raise AppError(503, 'captcha_unavailable', 'Listener verification is temporarily unavailable.')
     if not token:
-        raise AppError(422, 'captcha_required', 'Complete listener verification before continuing.')
+        raise AppError(403, 'captcha_required', 'Complete the security check before continuing.')
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post('https://challenges.cloudflare.com/turnstile/v0/siteverify', data={'secret':key,'response':token,'remoteip':client_ip(request)})
@@ -140,7 +140,7 @@ async def _verify_captcha(token: str | None, request: Request):
     except (httpx.HTTPError, ValueError):
         raise AppError(503, 'captcha_unavailable', 'Listener verification could not connect. Try again.')
     if not valid:
-        raise AppError(422, 'captcha_rejected', 'Listener verification failed. Try again.')
+        raise AppError(403, 'captcha_rejected', 'The security check could not be verified. Complete it again and retry.')
 
 def _db(db):
     return db
@@ -325,7 +325,7 @@ async def create_test(
         if not re.fullmatch(r'[A-Za-z0-9._~-]{16,128}', idempotency_key):
             raise AppError(422, 'invalid_idempotency_key', 'Idempotency-Key must be 16 to 128 URL-safe characters.')
         key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
-        request_hash = hashlib.sha256(json.dumps(body.model_dump(mode='json'), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        request_hash = hashlib.sha256(json.dumps(body.model_dump(mode='json', exclude={'captcha_token'}), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         existing = await db.heardit_tests.find_one({'idempotency_key_hash':key_hash})
         if existing:
             if existing.get('publish_request_hash') != request_hash:
@@ -336,6 +336,7 @@ async def create_test(
     asset = await db.audio_assets.find_one({'id':body.audio_id})
     if not asset: raise AppError(422,'audio_required','Generate and save audio before publishing this test.')
     if asset.get('input_text') != canonical_speech_text(body.direction, body.sentence): raise AppError(422,'audio_mismatch','Generate audio for the current sentence and direction before publishing.')
+    await _verify_captcha(body.captcha_token, request)
     test_id = secrets.token_urlsafe(12)
     token = _idempotent_management_token(test_id, key_hash) if key_hash else secrets.token_urlsafe(32)
     labels = [body.intended_label.strip(), *body.distractors]

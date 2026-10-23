@@ -39,6 +39,7 @@ class CreateTest(BaseModel):
     direction: str = Field(min_length=1, max_length=120)
     audio_id: str = Field(min_length=1)
     option_descriptions: list[str] = Field(default_factory=list, max_length=4)
+    captcha_token: str | None = Field(default=None, max_length=4096)
 
     @field_validator('distractors')
     @classmethod
