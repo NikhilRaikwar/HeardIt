@@ -215,10 +215,12 @@ async def admin_stats(x_admin_key: str | None = Header(default=None), db=Depends
     responded_tests = await db.heardit_votes.distinct('test_id')
     funnel = {event: await db.heardit_events.count_documents({'event': event}) for event in FUNNEL_EVENTS}
     return {
-        'tests_created': await db.heardit_tests.count_documents({}),
-        'tests_with_response': len(responded_tests),
-        'votes': votes,
-        'funnel': funnel,
+        'server_confirmed': {
+            'tests_published': await db.heardit_tests.count_documents({'status': 'published'}),
+            'tests_with_responses': len(responded_tests),
+            'votes_accepted': votes,
+        },
+        'client_reported': {'funnel': funnel},
     }
 
 @router.post('/api/v1/suggestions', response_model=Suggestion)

@@ -2,16 +2,12 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { isValidAdminSession } from "@/lib/admin-session";
+import type { components } from "@/lib/api-schema";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Private product metrics", robots: { index: false, follow: false } };
 
-type AdminStats = {
-  tests_created: number;
-  tests_with_response: number;
-  votes: number;
-  funnel: Record<string, number>;
-};
+type AdminStats = components["schemas"]["AdminStatsResponse"];
 
 const funnelSteps = [
   ["create_started", "Create started"],
@@ -35,7 +31,12 @@ async function loadStats(key: string): Promise<AdminStats | null> {
     const value: unknown = await response.json();
     if (!value || typeof value !== "object") return null;
     const stats = value as AdminStats;
-    return Number.isInteger(stats.tests_created) && Number.isInteger(stats.votes) && stats.funnel ? stats : null;
+    return Number.isInteger(stats.server_confirmed?.tests_published)
+      && Number.isInteger(stats.server_confirmed?.tests_with_responses)
+      && Number.isInteger(stats.server_confirmed?.votes_accepted)
+      && stats.client_reported?.funnel
+      ? stats
+      : null;
   } catch {
     return null;
   }
@@ -50,5 +51,5 @@ export default async function AdminPage() {
   }
 
   const stats = await loadStats(key);
-  return <main className="hi-admin"><section className="hi-admin-card"><span className="hi-small-label">PRIVATE OPERATIONS</span><h1>HeardIt metrics</h1><p>Counts come from MongoDB. Funnel events are retained for up to 180 days.</p>{stats ? <><div className="hi-admin-metrics"><article><span>Tests created</span><b>{stats.tests_created}</b></article><article><span>Tests with a response</span><b>{stats.tests_with_response}</b></article><article><span>Saved votes</span><b>{stats.votes}</b></article></div><h2>Product funnel</h2><ol className="hi-admin-funnel">{funnelSteps.map(([event, label]) => <li key={event}><span>{label}</span><b>{stats.funnel[event] ?? 0}</b></li>)}</ol></> : <p role="status">Metrics are unavailable. Check the API connection and matching ADMIN_KEY values on both services.</p>}</section></main>;
+  return <main className="hi-admin"><section className="hi-admin-card"><span className="hi-small-label">PRIVATE OPERATIONS</span><h1>HeardIt metrics</h1><p>MongoDB collections confirm published tests and accepted votes. Browser funnel events are client-reported and may be incomplete or spoofed.</p>{stats ? <><h2>Server-confirmed</h2><p>Counts derived from published test and saved vote records.</p><div className="hi-admin-metrics"><article><span>Published tests</span><b>{stats.server_confirmed.tests_published}</b></article><article><span>Tests with responses</span><b>{stats.server_confirmed.tests_with_responses}</b></article><article><span>Accepted votes</span><b>{stats.server_confirmed.votes_accepted}</b></article></div><h2>Client-reported funnel</h2><p>Events sent by browsers. Use as directional product telemetry, not verified outcomes. Events are retained for up to 180 days.</p><ol className="hi-admin-funnel">{funnelSteps.map(([event, label]) => <li key={event}><span>{label}</span><b>{stats.client_reported.funnel[event] ?? 0}</b></li>)}</ol></> : <p role="status">Metrics are unavailable. Check the API connection and matching ADMIN_KEY values on both services.</p>}</section></main>;
 }

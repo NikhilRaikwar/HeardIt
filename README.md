@@ -80,7 +80,7 @@ The Next.js app proxies API requests to FastAPI. Provider credentials stay on th
 - Mongo-backed per-IP and per-test write limits and daily publishing/voting caps constrain bursts. Rotating browser IDs, clearing storage, VPNs and distributed clients can still create additional participants. These controls are basic abuse prevention, not proof of unique humans.
 - Forwarded IP headers are ignored unless `HEARDIT_TRUST_PROXY=true`. Enable that setting only behind a controlled proxy that overwrites client-supplied forwarding headers; keep the backend inaccessible through an untrusted forwarding path. An optional CAPTCHA hook is disabled by default.
 - Creators opening their own listener link see a labelled, read-only preview; it does not create a listener assignment or submit a vote.
-- Results are calculated in Python. Empty groups show insufficient data, and results under 20 total responses are marked preliminary.
+- MongoDB aggregation computes answer counts; Python computes Wilson 95% intervals from those aggregates. Empty groups show insufficient data, and results under 20 total responses are marked preliminary.
 - Positive voice lift is presented as a sample difference, not proof of statistical significance or general model quality.
 - Fish audio is cached by synthesis inputs. The landing demo stays in setup state until a genuine sample MP3 is configured.
 - Product events exclude sentence text, voice directions, selected labels, participant IDs, management tokens, and assignment tokens. MongoDB retains events for up to 180 days; PostHog is optional and its project retention follows the configured account.
@@ -153,7 +153,7 @@ The command writes `public/demo/{curious,annoyed,hurt,playful}.mp3` and `public/
 
 ### Private product metrics
 
-Set the same `ADMIN_KEY` in the Vercel frontend project and the FastAPI deployment. Visit `/admin`, enter the key once, and the page reads test, response, vote, and funnel counts from MongoDB. It does not use PostHog as its source of truth. With the key unset, `/admin` returns a not-found page.
+Set the same `ADMIN_KEY` in the Vercel frontend project and the FastAPI deployment. Visit `/admin` and enter the key once. The page separates server-confirmed published-test and accepted-vote counts derived from MongoDB collections from client-reported funnel events. Client events can be missing or spoofed, so they are directional telemetry and never change the server-confirmed counts. The dashboard does not use PostHog as its source of truth. With the key unset, `/admin` returns a not-found page.
 
 The tracked funnel is `create_started → voice_generation_completed → test_published → share_clicked → test_opened → vote_submitted`. Product events are filtered in the browser and again in FastAPI; neither store receives sentence text, voice directions, tokens, participant identifiers, or answer labels.
 

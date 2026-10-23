@@ -413,10 +413,10 @@ async def test_real_mongo_recovers_after_startup_outage_and_indexes_before_vote(
                 assert event.status_code == 202, event.text
                 admin = await client.get('/api/v1/admin/stats', headers={'X-Admin-Key':admin_key})
                 assert admin.status_code == 200, admin.text
-                assert admin.json()['tests_created'] == 1
-                assert admin.json()['tests_with_response'] == 1
-                assert admin.json()['votes'] == 1
-                assert admin.json()['funnel']['test_opened'] == 1
+                assert admin.json()['server_confirmed'] == {
+                    'tests_published':1, 'tests_with_responses':1, 'votes_accepted':1,
+                }
+                assert admin.json()['client_reported']['funnel']['test_opened'] == 1
                 stored_event = await db.heardit_events.find_one({'event':'test_opened'})
                 assert stored_event['properties'] == {'surface':'listener'}
                 health = await client.get('/health')

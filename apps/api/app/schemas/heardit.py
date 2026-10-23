@@ -105,11 +105,19 @@ class ProductEventResponse(BaseModel):
     accepted: Literal[True]
 
 
-class AdminStatsResponse(BaseModel):
-    tests_created: int
-    tests_with_response: int
-    votes: int
+class AdminServerConfirmedStats(BaseModel):
+    tests_published: int
+    tests_with_responses: int
+    votes_accepted: int
+
+
+class AdminClientReportedStats(BaseModel):
     funnel: dict[str, int]
+
+
+class AdminStatsResponse(BaseModel):
+    server_confirmed: AdminServerConfirmedStats
+    client_reported: AdminClientReportedStats
 
 
 class AudioGenerateResponse(BaseModel):

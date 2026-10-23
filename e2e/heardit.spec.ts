@@ -188,7 +188,8 @@ test("admin metrics require a private key and establish an HTTP-only expiring se
 
   await page.getByLabel("Admin key").fill(e2eAdminKey);
   await page.getByRole("button", { name: "Open metrics" }).click();
-  await expect(page.getByText(/Counts come from MongoDB/)).toBeVisible();
+  await expect(page.getByText(/MongoDB collections confirm published tests and accepted votes/)).toBeVisible();
+  await expect(page.getByText(/Browser funnel events are client-reported and may be incomplete or spoofed/)).toBeVisible();
   const session = (await context.cookies()).find(cookie => cookie.name === "heardit-admin-session");
   expect(session?.httpOnly).toBe(true);
   expect(session?.sameSite).toBe("Strict");

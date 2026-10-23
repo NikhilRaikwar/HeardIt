@@ -233,15 +233,18 @@ async def test_product_events_store_sanitized_properties_only():
 
 
 @pytest.mark.asyncio
-async def test_admin_stats_are_private_and_funnel_counts_come_from_mongo(monkeypatch):
+async def test_admin_stats_separate_server_confirmed_counts_from_client_events(monkeypatch):
     from pydantic import SecretStr
     from app.routers import heardit as router_module
 
     db = FakeDB()
+    db.heardit_tests.rows[0]['status'] = 'published'
     db.heardit_votes.rows.append({'test_id': 'test-1', 'anonymous_participant_hash': 'p1'})
     db.heardit_events.rows.extend([
         {'event': 'create_started'}, {'event': 'create_started'},
-        {'event': 'test_published'}, {'event': 'vote_submitted'},
+        {'event': 'test_published'}, {'event': 'test_published'},
+        {'event': 'vote_submitted'}, {'event': 'vote_submitted'},
+        {'event': 'test_opened'}, {'event': 'share_clicked'},
     ])
     test_admin_key = 'admin-test-key-' + ('x' * 40)
     monkeypatch.setattr(router_module, 'settings', router_module.settings.model_copy(update={'admin_key': SecretStr(test_admin_key)}))
@@ -250,11 +253,15 @@ async def test_admin_stats_are_private_and_funnel_counts_come_from_mongo(monkeyp
     assert unauthorized.value.status == 404
     result = await admin_stats(x_admin_key=test_admin_key, db=db)
     assert result == {
-        'tests_created': 1, 'tests_with_response': 1, 'votes': 1,
-        'funnel': {
-            'create_started': 2, 'voice_generation_completed': 0,
-            'test_published': 1, 'share_clicked': 0,
-            'test_opened': 0, 'vote_submitted': 1,
+        'server_confirmed': {
+            'tests_published': 1, 'tests_with_responses': 1, 'votes_accepted': 1,
+        },
+        'client_reported': {
+            'funnel': {
+                'create_started': 2, 'voice_generation_completed': 0,
+                'test_published': 2, 'share_clicked': 1,
+                'test_opened': 1, 'vote_submitted': 2,
+            },
         },
     }
 
