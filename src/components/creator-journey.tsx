@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { ArrowLeft, ArrowRight, AudioLines, Check, ClipboardCheck, Copy, FileText, Headphones, LoaderCircle, PencilLine, RefreshCw, Share2, Sparkles, Volume2 } from "lucide-react";
 import { track } from "@/components/heardit";
 import { hearditApi } from "@/lib/heardit-api";
@@ -11,7 +11,7 @@ import { TurnstileWidget } from "@/components/turnstile-widget";
 
 type OptionDraft = { label: string; description: string };
 type AudioAsset = components["schemas"]["AudioGenerateResponse"];
-type Draft = { sentence: string; options: [OptionDraft, OptionDraft, OptionDraft, OptionDraft]; direction: string; audio: AudioAsset | null; step: 1 | 2 | 3 };
+type Draft = { sentence: string; options: [OptionDraft, OptionDraft, OptionDraft, OptionDraft]; intendedIndex: 0 | 1 | 2 | 3; direction: string; audio: AudioAsset | null; step: 1 | 2 | 3 };
 
 const DRAFT_KEY = "heardit-creator-draft-v2";
 const defaults: Draft = {
@@ -22,6 +22,7 @@ const defaults: Draft = {
     { label: "Hurt", description: "Feeling upset" },
     { label: "Playful", description: "Light and teasing" },
   ],
+  intendedIndex: 0,
   direction: "[curious, slightly surprised, gentle tone]",
   audio: null,
   step: 1,
@@ -97,7 +98,7 @@ export function CreatorJourney() {
       const stored = localStorage.getItem(DRAFT_KEY);
       if (stored) {
         const value = JSON.parse(stored) as Partial<Draft>;
-        setDraft({ ...defaults, ...value, options: Array.isArray(value.options) && value.options.length === 4 ? value.options as Draft["options"] : defaults.options });
+        setDraft({ ...defaults, ...value, options: Array.isArray(value.options) && value.options.length === 4 ? value.options as Draft["options"] : defaults.options, intendedIndex: value.intendedIndex === 1 || value.intendedIndex === 2 || value.intendedIndex === 3 ? value.intendedIndex : 0 });
       }
     } catch { localStorage.removeItem(DRAFT_KEY); }
     setHydrated(true);
@@ -120,16 +121,20 @@ export function CreatorJourney() {
     setDraft(current => ({ ...current, options: current.options.map((option, i) => i === index ? { ...option, [key]: value } : option) as Draft["options"] }));
     setLabelsTouched(true); setError(""); setNotice("");
   }
+  function selectIntended(index: 0 | 1 | 2 | 3) {
+    setDraft(current => current.intendedIndex === index ? current : { ...current, intendedIndex: index, audio: null, step: 1 });
+    setError(""); setNotice("");
+  }
 
   async function suggest(mode: "all" | "direction") {
     if (!sentenceValid) { setError("Enter one sentence of up to 180 characters first."); return; }
     setError(""); setNotice(""); setBusy(mode === "all" ? "suggest" : "direction");
     track("ai_suggestion_requested", { surface: mode === "all" ? "interpretations" : "direction" });
     try {
-      const result = await hearditApi.suggest({ sentence: draft.sentence.trim(), intended_label: draft.options[0].label.trim() || undefined });
+      const result = await hearditApi.suggest({ sentence: draft.sentence.trim(), intended_label: draft.options[draft.intendedIndex].label.trim() || undefined });
       if (mode === "direction") { updateDirection(result.fish_direction); setNotice("Direction suggestion is ready. Review and edit it before generating."); }
       else {
-        setDraft(current => ({ ...current, options: [{ ...current.options[0], label: result.intended_label }, ...result.alternative_labels.map((label, i) => ({ ...current.options[i + 1], label }))] as Draft["options"], direction: result.fish_direction, audio: null, step: 1 }));
+        setDraft(current => ({ ...current, options: [{ ...current.options[current.intendedIndex], label: result.intended_label }, ...current.options.filter((_, index) => index !== current.intendedIndex).map((option, i) => ({ ...option, label: result.alternative_labels[i] }))] as Draft["options"], intendedIndex: 0, direction: result.fish_direction, audio: null, step: 1 }));
         setLabelsTouched(true); setNotice("Suggestions are ready. Review and edit each one before generating.");
       }
     } catch (reason) { setError((reason as Error).message); }
@@ -161,10 +166,12 @@ export function CreatorJourney() {
     if (turnstileSiteKey && !publishCaptchaToken) { setError("Complete the security check before publishing."); return; }
     setBusy("publish"); setError("");
     try {
+      const intendedOption = draft.options[draft.intendedIndex];
+      const alternativeOptions = draft.options.filter((_, index) => index !== draft.intendedIndex);
       const body = {
-        sentence: draft.sentence.trim(), intended_label: draft.options[0].label.trim(),
-        distractors: draft.options.slice(1).map(option => option.label.trim()),
-        option_descriptions: draft.options.map(option => option.description.trim()),
+        sentence: draft.sentence.trim(), intended_label: intendedOption.label.trim(),
+        distractors: alternativeOptions.map(option => option.label.trim()),
+        option_descriptions: [intendedOption, ...alternativeOptions].map(option => option.description.trim()),
         direction: draft.direction.trim(), audio_id: draft.audio.audio_id,
       };
       const fingerprint = JSON.stringify(body);
@@ -202,7 +209,7 @@ export function CreatorJourney() {
       {stage === 1 && <div className="hi-studio-layout hj-layout">
         <section className="hi-studio-form hj-form" aria-label="Listening test setup">
           <section className="hi-studio-section"><div className="hi-studio-section-heading"><span className="hi-studio-number">1</span><div><h2>Your sentence</h2><p>Enter one short sentence (up to 180 characters).</p></div><small className="hi-studio-count">{draft.sentence.length}/180</small></div><textarea id="sentence" aria-label="Your sentence" maxLength={180} value={draft.sentence} onChange={event => updateSentence(event.target.value)} placeholder="I thought you said you’d be here by now." rows={3}/>{!sentenceValid && draft.sentence.length > 0 && <p className="hj-inline-error">Use one sentence on a single line.</p>}</section>
-          <section className="hi-studio-section"><div className="hi-studio-section-heading"><span className="hi-studio-number">2</span><div><h2>What do you intend?</h2><p>Choose the intended meaning and three plausible alternatives.</p></div><button className="hi-quiet-button" type="button" onClick={() => void suggest("all")} disabled={!sentenceValid || !!busy}><Sparkles size={15}/>{busy === "suggest" ? <><LoaderCircle className="hi-spin" size={14}/>Thinking</> : "AI suggest"}</button></div><div className="hi-meaning-grid">{draft.options.map((option, index) => <label className={`hi-meaning-card ${index === 0 ? "is-intended" : ""}`} key={index}><span className="hi-meaning-indicator">{index === 0 ? <Check size={13}/> : null}</span><span className="hi-meaning-meta">{index === 0 ? "Your intended meaning" : `Alternative ${index}`}</span><input aria-label={index === 0 ? "Intended interpretation" : `Alternative ${index}`} value={option.label} onChange={event => updateOption(index, "label", event.target.value)} placeholder={index === 0 ? "e.g. Curious" : "e.g. Annoyed"} maxLength={60}/><input className="hj-description-input" aria-label={`${index === 0 ? "Intended" : `Alternative ${index}`} description`} value={option.description} onChange={event => updateOption(index, "description", event.target.value)} placeholder="Add a short description" maxLength={120}/></label>)}</div>{labelsTouched && !uniqueLabels && <p className="hj-inline-error">All four labels must be distinct and non-empty.</p>}</section>
+          <section className="hi-studio-section"><div className="hi-studio-section-heading"><span className="hi-studio-number">2</span><div><h2>What do you intend?</h2><p>Choose the intended meaning and three plausible alternatives.</p></div><button className="hi-quiet-button" type="button" onClick={() => void suggest("all")} disabled={!sentenceValid || !!busy}><Sparkles size={15}/>{busy === "suggest" ? <><LoaderCircle className="hi-spin" size={14}/>Thinking</> : "AI suggest"}</button></div><div className="hi-meaning-grid" role="group" aria-label="Choose the intended interpretation">{draft.options.map((option, index) => { const isIntended = index === draft.intendedIndex; const alternativeNumber = index < draft.intendedIndex ? index + 1 : index; const optionName = option.label.trim() || `Alternative ${alternativeNumber || index + 1}`; const selectFromCard = (event: MouseEvent<HTMLDivElement>) => { if ((event.target as HTMLElement).closest("input")) return; selectIntended(index as 0 | 1 | 2 | 3); }; return <div className={`hi-meaning-card ${isIntended ? "is-intended" : ""}`} key={index} onClick={selectFromCard}><button className="hi-meaning-selector" type="button" onClick={() => selectIntended(index as 0 | 1 | 2 | 3)} aria-label={isIntended ? `${optionName} is the intended meaning` : `Make ${optionName} the intended meaning`} aria-pressed={isIntended}><span className="hi-meaning-indicator">{isIntended ? <Check size={13}/> : null}</span></button><span className="hi-meaning-meta">{isIntended ? "Your intended meaning" : `Alternative ${alternativeNumber}`}</span><input aria-label={isIntended ? "Intended interpretation" : `Alternative ${alternativeNumber}`} value={option.label} onChange={event => updateOption(index, "label", event.target.value)} placeholder={isIntended ? "e.g. Curious" : "e.g. Annoyed"} maxLength={60}/><input className="hj-description-input" aria-label={`${isIntended ? "Intended" : `Alternative ${alternativeNumber}`} description`} value={option.description} onChange={event => updateOption(index, "description", event.target.value)} placeholder="Add a short description" maxLength={120}/></div>; })}</div>{labelsTouched && !uniqueLabels && <p className="hj-inline-error">All four labels must be distinct and non-empty.</p>}</section>
           <section className="hi-studio-section"><div className="hi-studio-section-heading"><span className="hi-studio-number">3</span><div><h2>Fish inline direction</h2><p>Add a voice direction. Review it before synthesis.</p></div><button className="hi-quiet-button" type="button" onClick={() => void suggest("direction")} disabled={!sentenceValid || !!busy}><Sparkles size={15}/>{busy === "direction" ? "Improving" : "Improve with AI"}</button></div><input id="direction" className="hi-direction-input" aria-label="Fish inline direction" value={draft.direction} onChange={event => updateDirection(event.target.value)} placeholder="[curious, slightly surprised, gentle tone]" maxLength={120}/><div className="hi-examples"><span className="hi-examples-icon"><AudioLines size={15}/></span><div><b>Example directions</b><div>{["[warm, friendly]", "[sad, emotional]", "[annoyed, frustrated]", "[playful, teasing]"].map(example => <button type="button" key={example} onClick={() => updateDirection(example)}>{example}</button>)}</div></div></div><p className="hj-direction-note">Direction cues are instructions to try. They do not guarantee a particular performance.</p></section>
           <section className="hi-studio-section hi-generate-section"><div className="hi-studio-section-heading"><span className="hi-studio-number">4</span><div><h2>Generate voice</h2><p>Create one real expressive clip with Fish Audio.</p></div></div><button className="hi-button hi-generate" type="button" onClick={() => void generate()} disabled={!canGenerate}>{busy === "generate" ? <><LoaderCircle className="hi-spin" size={16}/>Generating with Fish Audio…</> : <><AudioLines size={17}/>{draft.audio ? "Generate voice again" : "Generate voice"}<ArrowRight size={16}/></>}</button><p className="hi-generation-note"><AudioLines size={13}/>{draft.audio ? `Last saved clip: ${draft.audio.model}${draft.audio.cached ? " · reused from cache" : ""}.` : "Uses Fish Audio s2.1-pro-free. Audio must save before review."}</p></section>
           {error && <div className="hi-error" role="alert">{error}</div>}{notice && <p className="hj-notice" role="status"><Check size={14}/>{notice}</p>}
@@ -221,8 +228,8 @@ export function CreatorJourney() {
       {stage === 3 && <div className="hj-review-layout"><section className="hj-review-card">
         <div className="hj-review-title"><span className="hj-icon-disc"><ClipboardCheck size={17}/></span><div><span className="hi-small-label">FINAL CHECK</span><h2>Your listening test</h2></div></div>
         <div className="hj-review-row"><div><span>Sentence</span><p>{draft.sentence}</p></div><button type="button" onClick={() => update({ step: 1 })}>Edit</button></div>
-        <div className="hj-review-row"><div><span>Intended meaning</span><p><b>{draft.options[0].label}</b><small>{draft.options[0].description}</small></p></div><button type="button" onClick={() => update({ step: 1 })}>Edit</button></div>
-        <div className="hj-review-row"><div><span>Alternative meanings</span><div className="hj-review-options">{draft.options.slice(1).map(option => <span key={option.label}><i/>{option.label}<small>{option.description}</small></span>)}</div></div><button type="button" onClick={() => update({ step: 1 })}>Edit</button></div>
+        <div className="hj-review-row"><div><span>Intended meaning</span><p><b>{draft.options[draft.intendedIndex].label}</b><small>{draft.options[draft.intendedIndex].description}</small></p></div><button type="button" onClick={() => update({ step: 1 })}>Edit</button></div>
+        <div className="hj-review-row"><div><span>Alternative meanings</span><div className="hj-review-options">{draft.options.filter((_, index) => index !== draft.intendedIndex).map(option => <span key={option.label}><i/>{option.label}<small>{option.description}</small></span>)}</div></div><button type="button" onClick={() => update({ step: 1 })}>Edit</button></div>
         <div className="hj-review-row"><div><span>Fish direction</span><p className="hj-direction-review">{draft.direction}</p></div><button type="button" onClick={() => update({ step: 1 })}>Edit</button></div>
         {draft.audio && <div className="hj-review-audio"><span>VOICE PREVIEW</span><AudioPreview audio={draft.audio}/><small>{draft.audio.model} · {draft.audio.cached ? "Cached audio" : "Generated audio"}</small></div>}
         {error && <div className="hi-error" role="alert">{error}</div>}
