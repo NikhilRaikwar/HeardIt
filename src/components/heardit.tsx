@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, AudioLines, BarChart3, Check, Clock3, Copy, FileText, Headphones, LoaderCircle, Menu, Pause, PencilLine, Play, Sparkles, UsersRound, Volume2, VolumeX, X, Zap } from "lucide-react";
 import { hearditApi } from "@/lib/heardit-api";
 import type { components } from "@/lib/api-schema";
+import type { DemoSample } from "@/lib/demo-audio";
 import { trackProductEvent } from "@/lib/analytics";
 
 type PublicStats=components["schemas"]["PublicProductStats"];
@@ -15,7 +16,6 @@ function Nav(){return <header className="hi-nav"><Link href="/" className="hi-wo
 
 const demoSentence = "I thought you said you'd be here by now.";
 const demoChoices = ["Curious", "Annoyed", "Hurt", "Playful"];
-type DemoSample = {label:string;direction:string;audio_id:string;url:string};
 const demoIntended = "Curious";
 let activeDemoAudio:HTMLAudioElement|null=null;
 const formatDuration = (seconds:number) => {
@@ -33,7 +33,6 @@ function EmotionIllustration({demoSamples}:{demoSamples:DemoSample[]}){
  const audioRefs=useRef<Array<HTMLAudioElement|null>>([]);
  const [playing,setPlaying]=useState<string|null>(null);
  const [audioError,setAudioError]=useState<string|null>(null);
- const configuredSamples=demoSamples.filter(sample=>sample.url).length;
  async function toggleSample(index:number){
   const audio=audioRefs.current[index], sample=demoSamples[index];
   if(!audio||!sample.url)return;
@@ -42,7 +41,8 @@ function EmotionIllustration({demoSamples}:{demoSamples:DemoSample[]}){
   setAudioError(null);
   try{await audio.play();}catch{setAudioError(sample.label);}
  }
- return <div className="hi-hero-art" aria-label="Play four Fish Audio interpretations of the same sentence"><div className="hi-art-glow"/><svg className="hi-art-connectors" viewBox="0 0 540 390" aria-hidden="true"><path d="M145 95 C190 112 178 140 214 157"/><path d="M395 107 C352 119 376 145 330 158"/><path d="M132 296 C168 270 188 257 218 239"/><path d="M414 288 C374 269 366 255 331 240"/></svg>{demoSamples.map((sample,index)=><button key={sample.label} type="button" className={`hi-emotion-card hi-emotion-${sample.label.toLowerCase()} ${playing===sample.label?"is-playing":""}`} onClick={()=>void toggleSample(index)} disabled={!sample.url} aria-label={`${playing===sample.label?"Pause":"Play"} ${sample.label.toLowerCase()} Fish Audio sample`} title={sample.url?`Play ${sample.label} sample`: `${sample.label} sample audio is not configured`}><audio ref={node=>{audioRefs.current[index]=node}} src={sample.url||undefined} preload="none" onPlay={()=>{activeDemoAudio=audioRefs.current[index];setAudioError(null);setPlaying(sample.label);track("audio_played",{surface:"hero_sample",emotion:sample.label.toLowerCase()})}} onPause={()=>{setPlaying(current=>current===sample.label?null:current);if(activeDemoAudio===audioRefs.current[index])activeDemoAudio=null}} onEnded={()=>setPlaying(null)} onError={()=>{if(activeDemoAudio===audioRefs.current[index])setAudioError(sample.label)}}/><p>“I thought you said<br/>you’d be here by now.”</p><span>{sample.label.toUpperCase()}</span><i aria-hidden="true">{playing===sample.label?<Pause size={13} fill="currentColor"/>:<Play size={13} fill="currentColor"/>}</i></button>)}<div className="hi-art-wave" aria-hidden="true">{[10,18,27,14,36,20,50,29,66,35,80,45,59,27,42,19,32,13].map((height,index)=><i key={index} style={{height:String(height)+"px"}}/>)}</div>{audioError&&<span className="hi-art-audio-status" role="status">The {audioError} sample could not be played. Try again.</span>}{configuredSamples<4&&<span className="hi-art-samples-status">{configuredSamples} of 4 Fish Audio samples ready</span>}</div>
+ if(demoSamples.length!==4)return null;
+ return <div className="hi-hero-art" aria-label="Play four Fish Audio interpretations of the same sentence"><div className="hi-art-glow"/><svg className="hi-art-connectors" viewBox="0 0 540 390" aria-hidden="true"><path d="M145 95 C190 112 178 140 214 157"/><path d="M395 107 C352 119 376 145 330 158"/><path d="M132 296 C168 270 188 257 218 239"/><path d="M414 288 C374 269 366 255 331 240"/></svg>{demoSamples.map((sample,index)=><button key={sample.label} type="button" className={`hi-emotion-card hi-emotion-${sample.label.toLowerCase()} ${playing===sample.label?"is-playing":""}`} onClick={()=>void toggleSample(index)} aria-label={`${playing===sample.label?"Pause":"Play"} ${sample.label.toLowerCase()} Fish Audio sample`} title={`Play ${sample.label} Fish Audio sample`}><audio ref={node=>{audioRefs.current[index]=node}} src={sample.url} preload="none" onPlay={()=>{activeDemoAudio=audioRefs.current[index];setAudioError(null);setPlaying(sample.label);track("audio_played",{surface:"hero_sample",emotion:sample.label.toLowerCase()})}} onPause={()=>{setPlaying(current=>current===sample.label?null:current);if(activeDemoAudio===audioRefs.current[index])activeDemoAudio=null}} onEnded={()=>setPlaying(null)} onError={()=>{if(activeDemoAudio===audioRefs.current[index])setAudioError(sample.label)}}/><p>“{sample.text}”</p><span>{sample.label.toUpperCase()}</span><i aria-hidden="true">{playing===sample.label?<Pause size={13} fill="currentColor"/>:<Play size={13} fill="currentColor"/>}</i></button>)}<div className="hi-art-wave" aria-hidden="true">{[10,18,27,14,36,20,50,29,66,35,80,45,59,27,42,19,32,13].map((height,index)=><i key={index} style={{height:String(height)+"px"}}/>)}</div>{audioError&&<span className="hi-art-audio-status" role="status">The {audioError} sample could not be played. Try again.</span>}</div>
 }
 
 function DemoSection({demoSamples}:{demoSamples:DemoSample[]}){
@@ -66,6 +66,7 @@ function DemoSection({demoSamples}:{demoSamples:DemoSample[]}){
  function toggleMute(){const audio=audioRef.current;if(!audio)return;audio.muted=!audio.muted;setMuted(audio.muted);}
  function seek(value:number){const audio=audioRef.current;if(audio&&Number.isFinite(duration))audio.currentTime=value;}
  const reveal=Boolean(guess&&demoReady);
+ if(!demoReady)return <section id="examples" className="hi-demo-panel hi-demo-not-configured" aria-labelledby="hi-demo-heading"><div className="hi-demo-panel-head"><div><span className="hi-small-label">THE IDEA</span><h2 id="hi-demo-heading">Same sentence. Different direction.</h2></div></div><p>{process.env.NODE_ENV==="development"?"Demo clips are generated on first run.":"The interactive audio example is unavailable."}</p><Link href="/create" className="hi-button hi-demo-cta" onClick={()=>track("create_started",{surface:"demo_setup"})}>Create a listening test <ArrowRight size={17}/></Link></section>;
  return <section id="examples" className="hi-demo-panel" aria-labelledby="hi-demo-heading">
   <div className="hi-demo-panel-orbit" aria-hidden="true"/>
   <div className="hi-demo-panel-head"><div><span className="hi-small-label">THE IDEA</span><h2 id="hi-demo-heading">Same sentence. Different direction.</h2></div><span className="hi-demo-number">01 / 04</span></div>

@@ -10,10 +10,27 @@ test("landing presents the HeardIt experiment and create CTA", async ({ page }) 
   await expect(page.getByRole("heading", { name: /Same Words.*Four Meanings/ })).toBeVisible();
   await expect(page.getByText("Can you hear what an AI voice really means?")).toBeVisible();
   await expect(page.getByRole("link", { name: "Create a listening test" }).first()).toHaveAttribute("href", "/create");
-  await expect(page.getByText("0 of 4 Fish Audio samples ready")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Curious", exact: true })).toBeDisabled();
+  await expect(page.getByText("0 of 4 Fish Audio samples ready")).toHaveCount(0);
+  await expect(page.getByText("Demo clips are generated on first run.")).toBeVisible();
+  await expect(page.locator(".hi-emotion-card")).toHaveCount(0);
   if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-landing-desktop.png", fullPage: true });
   if (page.viewportSize()?.width === 375) await page.screenshot({ path: "test-results/heardit-landing-mobile.png", fullPage: true });
+});
+
+test("landing enables static sample paths when a valid demo manifest is present", async ({ page }) => {
+  await page.goto("/?demo_fixture=present");
+  const samples = page.locator(".hi-emotion-card");
+  await expect(samples).toHaveCount(4);
+  await expect(samples.nth(0)).toHaveAttribute("aria-label", "Play curious Fish Audio sample");
+  await expect(samples.nth(0).locator("audio")).toHaveAttribute("src", "/demo/curious.mp3");
+  await expect(page.locator(".hi-demo-not-configured")).toHaveCount(0);
+});
+
+test("landing keeps the demo setup copy only in development when the manifest is absent", async ({ page }) => {
+  await page.goto("/?demo_fixture=missing");
+  await expect(page.getByText("Demo clips are generated on first run.")).toBeVisible();
+  await expect(page.getByText(/samples ready/i)).toHaveCount(0);
+  await expect(page.locator(".hi-emotion-card")).toHaveCount(0);
 });
 
 test("shared listening metadata and Open Graph image use generic copy", async ({ page }) => {

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "curious",
+    "label": "Curious",
+    "text": "I thought you said you'd be here by now.",
+    "model": "s2.1-pro-free",
+    "generated_at": "2026-10-23T00:00:00Z"
+  },
+  {
+    "id": "annoyed",
+    "label": "Annoyed",
+    "text": "I thought you said you'd be here by now.",
+    "model": "s2.1-pro-free",
+    "generated_at": "2026-10-23T00:00:00Z"
+  },
+  {
+    "id": "hurt",
+    "label": "Hurt",
+    "text": "I thought you said you'd be here by now.",
+    "model": "s2.1-pro-free",
+    "generated_at": "2026-10-23T00:00:00Z"
+  },
+  {
+    "id": "playful",
+    "label": "Playful",
+    "text": "I thought you said you'd be here by now.",
+    "model": "s2.1-pro-free",
+    "generated_at": "2026-10-23T00:00:00Z"
+  }
+]

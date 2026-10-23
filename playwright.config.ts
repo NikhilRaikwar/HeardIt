@@ -21,7 +21,7 @@ export default defineConfig({
   ],
   webServer: {
     command: `node node_modules/next/dist/bin/next dev -H 127.0.0.1 -p ${port}`,
-    env: { ADMIN_KEY: e2eAdminKey },
+    env: { ADMIN_KEY: e2eAdminKey, HEARDIT_E2E_DEMO_TESTING: "1" },
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

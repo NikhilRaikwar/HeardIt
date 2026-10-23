@@ -298,6 +298,9 @@ html:has(.hi-landing){scroll-snap-type:y proximity}
 .hi-demo-prompt{font-size:13px;min-height:0}
 .hi-demo-reveal{font-size:12px}
 .hi-demo-foot{font-size:11px}
+.hi-hero:not(:has(.hi-hero-art)){grid-template-columns:minmax(0,1fr)}
+.hi-hero:not(:has(.hi-hero-art)) .hi-hero-copy{max-width:920px}
+.hi-demo-not-configured>p{margin:24px auto 18px;color:var(--hi-muted);font-size:14px}
 .hi-section-heading .hi-small-label{font-size:10px}
 .hi-section-heading h2{font-size:29px}
 .hi-section-heading>p{font-size:13px}

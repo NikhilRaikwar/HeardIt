@@ -134,15 +134,15 @@ The FastAPI server reads private provider and database credentials. Never use `N
 
 See `.env.example` for a complete template. `ADMIN_KEY` must be the same value on the frontend and backend, and should be generated as a random value with at least 32 characters.
 
-### Prepare the landing demo clips
+### Demo clips
 
-The repository does not include fabricated or placeholder audio. With the FastAPI service running and configured with a real Fish Audio key, generate the four cached examples and write their asset IDs to `public/demo-audio.json`:
+With a real `FISH_API_KEY` in your environment or repository `.env`, generate four real Fish Audio MP3s directly from Fish Audio:
 
 ```powershell
 uv run --directory apps/api python ../../scripts/seed-demo.py
 ```
 
-The landing page checks that the manifest contains all four expected labels and verifies each MP3 with a one-byte range request before showing the interactive demo. If any clip is missing, the demo stays clearly marked as unavailable.
+The command writes `public/demo/{curious,annoyed,hurt,playful}.mp3` and `public/demo/manifest.json`. It does not need MongoDB or a running API. Review the generated clips, then commit the MP3s and manifest. The landing server component validates the manifest and local MP3 files at build/render time, and the browser plays those static files directly. If the files are absent, development shows a setup note and production does not claim that samples are ready.
 
 ### Private product metrics
 
