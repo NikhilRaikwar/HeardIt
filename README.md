@@ -25,6 +25,13 @@
   <a href="#how-it-works">How it works</a> · <a href="#architecture">Architecture</a> · <a href="#run-locally">Run locally</a> · <a href="#configuration">Configuration</a>
 </p>
 
+## Why this exists for Fish Audio
+
+HeardIt asks whether listeners follow the script's intended meaning or the delivery they hear.
+It uses Fish Audio `s2.1-pro-free` to synthesize creator-approved voice directions for a randomized listening experiment.
+Demo video: TODO(real-data) · Live: [heardit-six.vercel.app](https://heardit-six.vercel.app/)
+This is an exploratory interpretation test, not a claim about universal voice quality.
+
 ## The product
 
 A creator writes one short sentence, chooses the meaning they intend, and supplies three plausible alternatives. HeardIt can ask AIML for editable suggestions, then sends the creator-approved direction to Fish Audio to synthesize an MP3.
@@ -156,6 +163,8 @@ The command writes `public/demo/{curious,annoyed,hurt,playful}.mp3` and `public/
 Set the same `ADMIN_KEY` in the Vercel frontend project and the FastAPI deployment. Visit `/admin` and enter the key once. The page separates server-confirmed published-test and accepted-vote counts derived from MongoDB collections from client-reported funnel events. Client events can be missing or spoofed, so they are directional telemetry and never change the server-confirmed counts. The dashboard does not use PostHog as its source of truth. With the key unset, `/admin` returns a not-found page.
 
 The tracked funnel is `create_started → voice_generation_completed → test_published → share_clicked → test_opened → vote_submitted`. Product events are filtered in the browser and again in FastAPI; neither store receives sentence text, voice directions, tokens, participant identifiers, or answer labels.
+
+The `/admin` page labels MongoDB collection totals as **server-confirmed** and browser funnel counts as **client-reported**. Client events may be missing or fabricated and do not change published-test or accepted-vote counts. For a blank results-reporting worksheet and export notes, see [docs/RESULTS.md](docs/RESULTS.md).
 
 Vercel Analytics does not need an environment variable. Enable **Analytics** in the Vercel project's dashboard and redeploy to start collecting page views.
 
