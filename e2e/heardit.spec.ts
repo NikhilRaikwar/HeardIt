@@ -5,14 +5,19 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/v1/events", route => route.fulfill({ status: 202, json: { accepted: true } }));
 });
 
-test("landing presents the HeardIt experiment and create CTA", async ({ page }) => {
+test("landing presents the HeardIt experiment, real demo clips, and create CTA", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Same Words.*Four Meanings/ })).toBeVisible();
   await expect(page.getByText("Can you hear what an AI voice really means?")).toBeVisible();
   await expect(page.getByRole("link", { name: "Create a listening test" }).first()).toHaveAttribute("href", "/create");
   await expect(page.getByText("0 of 4 Fish Audio samples ready")).toHaveCount(0);
-  await expect(page.getByText("Demo clips are generated on first run.")).toBeVisible();
-  await expect(page.locator(".hi-emotion-card")).toHaveCount(0);
+  const samples = page.locator(".hi-emotion-card");
+  await expect(samples).toHaveCount(4);
+  for (const [index, label] of ["curious", "annoyed", "hurt", "playful"].entries()) {
+    await expect(samples.nth(index)).toHaveAttribute("aria-label", `Play ${label} Fish Audio sample`);
+    await expect(samples.nth(index).locator("audio")).toHaveAttribute("src", `/demo/${label}.mp3`);
+  }
+  await expect(page.getByText("Demo clips are generated on first run.")).toHaveCount(0);
   if (page.viewportSize()?.width === 1440) await page.screenshot({ path: "test-results/heardit-landing-desktop.png", fullPage: true });
   if (page.viewportSize()?.width === 375) await page.screenshot({ path: "test-results/heardit-landing-mobile.png", fullPage: true });
 });
