@@ -29,7 +29,7 @@
 
 HeardIt asks whether listeners follow the script's intended meaning or the delivery they hear.
 It uses Fish Audio `s2.1-pro-free` to synthesize creator-approved voice directions for a randomized listening experiment.
-Demo video: TODO(real-data) · Live: [heardit-six.vercel.app](https://heardit-six.vercel.app/)
+Live: [heardit-six.vercel.app](https://heardit-six.vercel.app/)
 This is an exploratory interpretation test, not a claim about universal voice quality.
 
 ## The product
